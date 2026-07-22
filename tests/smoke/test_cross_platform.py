@@ -134,16 +134,22 @@ def test_all_text_file_io_passes_encoding():
 
 # --- Skill OS-branch guard (tolerant: only checks skills that shell out to a venv) ---
 
-def test_skills_that_reference_venv_document_both_platforms():
+def test_skills_that_reference_a_venv_interpreter_document_both_platforms():
+    """A skill that shells out to a venv interpreter must document BOTH OS paths.
+
+    Triggers on a venv interpreter/pip PATH (the thing that actually needs
+    OS-branching), not on the bare word "venv" — a prose mention in a help
+    overview is not a shell-out and needs no OS paths."""
     if not SKILLS_DIR.is_dir():
         return
     for skill_md in SKILLS_DIR.glob("*/SKILL.md"):
         body = skill_md.read_text(encoding="utf-8")
-        if "venv" not in body:
-            continue
         posix = "venv/bin/python3" in body or "venv/bin/pip" in body
         windows = "Scripts\\python.exe" in body or "Scripts\\pip.exe" in body
+        if not (posix or windows):
+            continue
         assert posix and windows, (
-            f"{skill_md.relative_to(ROOT)}: references a venv but does not document "
-            "both POSIX (venv/bin/python3) and Windows (Scripts\\python.exe) paths"
+            f"{skill_md.relative_to(ROOT)}: references a venv interpreter path in one "
+            "OS form but not the other — document both POSIX (venv/bin/python3) and "
+            "Windows (Scripts\\python.exe)"
         )
