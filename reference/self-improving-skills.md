@@ -11,7 +11,7 @@ Prompts + Assertions direkt aus den expliziten Regeln der SKILL.md ableiten (nic
 ### Beispielprompt für evals.json
 
 ```tex
-Read {PATHTO SKILL.md} and derive an evals.json file for it, following the simulated-mode schema in ~/projekte/skill-evals/schema.md (skill_name + evals[] with id/prompt/expected_output/expectations).
+Read {PATHTO SKILL.md} and derive an evals.json file for it, following the simulated-mode schema in this plugin's reference/eval-schema.md (skill_name + evals[] with id/prompt/expected_output/expectations).
 
 For each distinct behavior rule or edge case stated in the SKILL.md, write one eval case: a realistic multi-turn user scenario (not a single-line prompt) that would actually exercise that rule, plus true/false-checkable expectations grounded in the rule's exact wording. Let the number of cases follow from how many distinct rules/edge cases the SKILL.md has — don't target a fixed count.
 
@@ -35,7 +35,7 @@ Not every failing assertion is a real skill bug — sometimes the assertion itse
 
 Log each iteration: number, score, keep or discard, what you tried. Do NOT stop to ask me. I may be asleep. Keep looping until I interrupt you, you hit a perfect score, or one of the stall conditions above triggers.
 
-Alongside the prose log, maintain a loop-state.json next to it, per the schema in ~/projekte/skill-evals/schema.md (iteration number, best score + pass/total, per-iteration history with keep/discard labels and commit hashes, stall streak, per-assertion fail streaks, stopped/stop_reason). Update it after every iteration, not just at the end — it's the quick-glance, machine-readable twin of the prose log, and lets a resumed/interrupted session pick up state without re-reading the whole thing.
+Alongside the prose log, maintain a loop-state.json next to it, per the schema in this plugin's reference/eval-schema.md (iteration number, best score + pass/total, per-iteration history with keep/discard labels and commit hashes, stall streak, per-assertion fail streaks, stopped/stop_reason). Update it after every iteration, not just at the end — it's the quick-glance, machine-readable twin of the prose log, and lets a resumed/interrupted session pick up state without re-reading the whole thing.
 ```
 
 ## Nach Abschluss
@@ -56,7 +56,7 @@ Schließt das Schema-Drift-Risiko von vornherein: Autor/Projekt über die produk
 
 ### evals.json — Schema-Erweiterung für Live-Cases
 
-Volles Schema (Feldreferenz, Beispiel, Live-Case-Anzahl-Faustregel) liegt zentral in `~/projekte/skill-evals/schema.md` — nicht mehr hier duplizieren, sonst laufen die beiden Kopien irgendwann auseinander.
+Volles Schema (Feldreferenz, Beispiel, Live-Case-Anzahl-Faustregel) liegt zentral in diesem Plugin unter `reference/eval-schema.md` — nicht mehr hier duplizieren, sonst laufen die beiden Kopien irgendwann auseinander.
 
 ### Snapshot/Reset — nur sicher, wenn die Datenquelle isoliert ist
 
