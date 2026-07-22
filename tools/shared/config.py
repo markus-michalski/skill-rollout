@@ -16,11 +16,10 @@ import yaml
 CONFIG_ROOT = Path.home() / ".skill-rollout"
 CONFIG_FILE = CONFIG_ROOT / "config.yaml"
 
-# Fallbacks used when no config.yaml exists (Markus' main-PC paths). Documented
-# in config/config.example.yaml — copy it to CONFIG_FILE to override per machine.
-DEFAULT_DOCS_BASE = (
-    "~/SeaDrive/Meine Bibliotheken/002-Development/Claude_Code/docs/self_improving_skill"  # noqa: E501
-)
+# Neutral fallbacks used only when no config.yaml exists. The real, machine-specific
+# docs location belongs in ~/.skill-rollout/config.yaml (see config.example.yaml),
+# never hardcoded here — this repo is public.
+DEFAULT_DOCS_BASE = "~/Documents/self_improving_skill"
 DEFAULT_SKILL_EVALS = "~/projekte/skill-evals"
 
 
