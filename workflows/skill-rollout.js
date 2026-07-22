@@ -284,33 +284,52 @@ checkpoints (this whole batch is pre-approved to run unattended) — it does NOT
 review", it means "run the same review, don't stop to ask about it". Do these steps IN ORDER,
 before any commit:
 
-1. **Actually invoke a real code-reviewer subagent — do not self-assess.** Use the Task/Agent tool
-   with \`subagent_type: "git-pr-workflows:code-reviewer"\` to review your own uncommitted changes.
-   \`git diff HEAD\` alone (not bare \`git diff\`, which misses anything already staged with
-   \`git add\`) STILL misses brand-new untracked files — this skill's own rollout routinely creates
-   new files (fixtures, eval docs). Run \`git add -A && git diff HEAD\` first (or pair \`git diff HEAD\`
-   with \`git status --porcelain\` and paste any new files' full content into the reviewer's context),
-   so a new file isn't reviewed blind — that would be the same bug in miniature, just for file
-   creation instead of code review itself. Passing this off as something you'll "keep in mind" while writing, instead of a
-   separate tool call after the edits exist, is exactly the failure this step guards against — a
-   prior batch's agents never made this call at all, and their PRs went out with zero real review
-   behind them (journal-verified: no code-reviewer invocation, no review artifact).
-2. **Fix every finding the review returns, at ANY severity (critical/high/medium/low), before
-   committing — EXCEPT the categories listed under "Stop-and-flag conditions" below (security/
-   credential/data-loss risk).** Those get flagged in \`needsHumanReview\`, same as always, never
-   silently self-fixed-and-pushed — an unattended agent applying its own fix to a credential leak
-   and shipping it is worse than surfacing it. Every other finding: do not ask, do not defer to a
-   follow-up — this checkpoint is pre-approved, not skipped.
-3. **Re-run the \`git-pr-workflows:code-reviewer\` subagent once** after applying fixes, to confirm the
-   findings from step 2 are actually gone (not just that you believe you fixed them). If THIS re-review surfaces
-   NEW findings that step 2 never saw (introduced by your own fixes) — fix those too before moving
-   on, same rule as step 2. Do not loop indefinitely; one fix-and-re-review pass is sufficient — this
-   means any fix you apply IN RESPONSE to this second pass ships without a third confirmation pass.
-   Add a one-line \`needsHumanReview\` note naming which finding(s) got a second-round fix that was
-   never itself re-reviewed, so a human knows exactly which lines carry that residual, bounded risk.
-   The separate "note in \`needsHumanReview\` instead of chasing further" allowance applies ONLY to
-   low-severity items surfaced by THIS re-review pass, never to anything step 2 already found —
-   nothing from the first pass gets quietly downgraded to "chose not to chase".
+1. **Perform a rigorous manual code-review pass — do not self-approve.**
+   Note: the Task/Agent tool (needed to spawn a code-reviewer subagent) is unavailable from this
+   workflow-subagent context — the same harness that makes \`EnterWorktree\` unavailable here also
+   prevents any nested agent-spawning (both fail at the Workflow tool boundary, not just cwd). This
+   is a documented constraint, not a step to skip. Record it once in the closing loop-log.md entry
+   as: "Review was manual self-review — code-reviewer subagent unavailable (issue #12)." Do NOT
+   add this to \`needsHumanReview\` — that channel is for genuine exception flags, not structural
+   constants; a per-skill boilerplate entry buries real flags.
+
+   Run the review as follows:
+   a. \`git add -A && git diff HEAD\` — not bare \`git diff\`, which misses untracked new files; this
+      rollout routinely creates new fixture and eval files. Also run \`git status --porcelain\` and
+      read any new untracked files in full — you cannot review what you have not read.
+   b. Review every changed chunk adversarially for each of these categories:
+      - **Logic/correctness**: off-by-one mistakes, wrong variable, broken edge case, incorrect
+        score arithmetic, assertion that would trivially pass even with a wrong implementation.
+      - **SKILL.md structural compliance**: required frontmatter fields present and non-empty, no
+        banned patterns (check the plugin's own CLAUDE.md ban-list), "Use when…" description is
+        trigger-rich and specific, model ID is a valid current-release Claude model string.
+      - **Eval design quality**: assertions test actual behavior, not transcript phrases; grading
+        is adversarial-realistic (not self-grading); no narration-dependent assertion that only
+        checks whether the skill "explicitly noted X" in its output.
+      - **Data hygiene**: no machine-specific paths, no sandbox-author names hardcoded where a
+        generic placeholder belongs, no credentials or API tokens even in comments.
+      - **Cross-file consistency**: do changes in one file contradict any other file edited in
+        this same run? (E.g. a SKILL.md step that references a tool the MCP server no longer exports.)
+   c. List every finding with severity (critical / high / medium / low) and the specific file +
+      line. Completeness matters: a finding you skip listing is a finding step 2 cannot fix.
+
+2. **Fix every finding from the review at ANY severity (critical/high/medium/low), before
+   committing — EXCEPT the categories listed under "Stop-and-flag conditions" below
+   (security/credential/data-loss risk).** Those get flagged in \`needsHumanReview\`, same as always,
+   never silently self-fixed-and-pushed — an unattended agent applying its own fix to a credential
+   leak and shipping it is worse than surfacing it. Every other finding: do not ask, do not defer to
+   a follow-up — this checkpoint is pre-approved, not skipped.
+
+3. **Re-read all files your fixes touched** — not the complete original diff, but every file
+   (not just every hunk) where you made a change — to confirm each step 2 change addresses the root
+   cause and has not introduced a cross-file inconsistency. If this targeted re-read surfaces NEW
+   findings introduced by your fixes, fix those too (same rule as step 2). One fix-and-re-read pass
+   is the limit — any fix you apply in response to this pass ships without a further confirmation
+   pass; add a one-line \`needsHumanReview\` note naming which finding(s) got a second-round fix that
+   was never itself re-reviewed. The "note and move on" allowance applies ONLY to low-severity items
+   surfaced by THIS re-review pass, never to anything step 2 already found — nothing from the first
+   pass gets quietly downgraded to "chose not to chase".
+
 4. Only then: commit, push, and open the PR. Use the PR-creation mechanism the plugin playbook's
    repo facts specify (gh api workaround if a PreToolUse hook blocks \`gh pr create\`, otherwise
    gh pr create directly — never guess which applies, it's documented per plugin).
@@ -398,6 +417,20 @@ const onboardPlaybookPath = referenceDir
 // EnterWorktree is unavailable (the cwd override is refused from a workflow-subagent context). The
 // operator owns the worktree's lifecycle. Defaults to false (agents self-isolate via EnterWorktree).
 const preIsolated = parsedArgs.preIsolated === true
+// code-reviewer subagent limitation (issue #12): the Task/Agent tool is unavailable from within a
+// workflow agent() call, so per-skill agents cannot spawn a nested code-reviewer subagent. The
+// mechanism differs from EnterWorktree's failure (EnterWorktree refuses the cwd override; this is
+// the Workflow boundary blocking any outbound agent-spawn from inside an agent() call), but both
+// result in unavailability from this context. The per-skill prompt therefore mandates a rigorous
+// manual self-review (see skillRolloutPrompt's "## git-workflow — autonomous mode", step 1).
+// The limitation is noted once per skill in loop-log.md (not in needsHumanReview — that channel
+// is for genuine exception flags, not structural constants).
+// If the harness ever lifts this constraint (nested agent-spawning becomes available from within
+// a workflow agent()), the correct fix is Option 2 from issue #12: restructure as sibling pipeline
+// stages in this script, with agentType: 'git-pr-workflows:code-reviewer' on the review stage —
+// but note the ordering constraint: the write stage must stop short of committing and leave changes
+// unstaged for the review stage to inspect before commit. Do NOT restore "Use Task/Agent tool" in
+// the prompt without first verifying the tool is actually present in the subagent's tool surface.
 
 if (!isValidPluginSlug(plugin)) {
   return {

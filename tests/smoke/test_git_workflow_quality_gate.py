@@ -1,6 +1,6 @@
 """Smoke: workflows/skill-rollout.js's inline git-workflow section must
-concretely require a real code-reviewer subagent invocation, not just promise
-that "code review findings get fixed".
+concretely require a real code-review pass with defined criteria, not just
+promise that "code review findings get fixed".
 
 Regression guard for a journal-verified incident (mm-skills batch, PRs #23-25,
 2026-07-22, see memory project_skill_rollout_git_workflow_bypass): the rollout
@@ -10,6 +10,13 @@ HOW to produce a code review in the first place — "Any code-review finding ...
 gets fixed without asking" presupposes a review that no instruction ever
 causes to happen. Zero code-reviewer subagent calls were made; the whole
 quality gate was aspirational prose with nothing behind it.
+
+NOTE (issue #12): the Task/Agent tool is unavailable from within a workflow
+agent() call, so the review step mandates a rigorous manual self-review with
+explicit criteria (logic, SKILL.md structure, eval design, data hygiene,
+cross-file consistency) rather than a subagent spawn. The tests below guard
+the new manual-review invariants. Option 2 (sibling pipeline stages) is tracked
+in issue #13 as the correct long-term fix.
 """
 
 import re
@@ -51,22 +58,38 @@ def _stop_and_flag_section():
     return _normalize(src[start:end])
 
 
-def test_git_workflow_section_names_a_real_code_reviewer_subagent():
+def test_git_workflow_section_documents_review_limitation_and_reason():
+    """The section must document WHY a subagent reviewer is not used (harness
+    constraint, not a policy choice) so a future editor knows not to restore
+    the broken instruction, and knows the correct fix path (issue #13)."""
     section = _git_workflow_section()
-    assert "git-pr-workflows:code-reviewer" in section, (
-        "git-workflow section must explicitly name the git-pr-workflows:code-reviewer "
-        "subagent type to invoke — otherwise 'code review' is only a word in the "
-        "prompt, never an actual tool call the agent is told to make"
-    )
-
-
-def test_git_workflow_section_requires_a_real_tool_invocation_for_review():
-    section = _git_workflow_section()
+    # Must acknowledge the tool is unavailable (not silently skip, not just do manual
+    # review)
     assert "Task/Agent tool" in section, (
-        "git-workflow section must instruct the agent to use the Task/Agent tool "
-        "to spawn the reviewer — a self-assessment without a separate tool call "
-        "is exactly the failure mode this guards against"
+        "git-workflow section must mention the Task/Agent tool and explain why it "
+        "cannot be used — not silently omit it, which would suggest the review gap "
+        "is intentional rather than a harness constraint"
     )
+    assert "unavailable" in section, (
+        "git-workflow section must state the tool is unavailable, not omit the "
+        "explanation — future editors need to know this is a constraint, not a "
+        "policy choice to drop independent review"
+    )
+
+
+def test_git_workflow_section_mandates_concrete_review_criteria():
+    """Regression guard for aspirational-prose failure mode: the review step
+    must list explicit, concrete categories to check — not just say 'do a
+    review' and let the agent decide what that means."""
+    section = _git_workflow_section()
+    # All five mandatory review categories must be present
+    for category in ("Logic/correctness", "SKILL.md structural compliance",
+                     "Eval design quality", "Data hygiene", "Cross-file consistency"):
+        assert category in section, (
+            f"review step must list '{category}' as an explicit category to "
+            "check — vague 'do a review' instructions reproduce the original "
+            "aspirational-prose failure"
+        )
 
 
 def _final_commit_step_idx(section):
@@ -78,12 +101,16 @@ def _final_commit_step_idx(section):
 
 
 def test_git_workflow_section_requires_review_before_commit():
+    """The review pass (whether subagent or manual) must be instructed BEFORE
+    the final commit step — the review must gate the commit, not follow it."""
     section = _git_workflow_section()
-    review_idx = section.find("git-pr-workflows:code-reviewer")
+    # Use the manual review instruction as the review marker (issue #12: subagent
+    # unavailable)
+    review_idx = section.find("rigorous manual code-review pass")
     commit_idx = _final_commit_step_idx(section)
     assert review_idx != -1 and review_idx < commit_idx, (
-        "the code-reviewer invocation must be instructed BEFORE the final commit "
-        "step, not merely mentioned somewhere in the section"
+        "the review instruction ('rigorous manual code-review pass') must appear "
+        "BEFORE the final commit step — review must gate the commit, not follow it"
     )
 
 
@@ -104,18 +131,18 @@ def test_git_workflow_section_requires_fixing_all_severities_before_commit():
     )
 
 
-def test_git_workflow_section_requires_a_re_review_pass_after_fixes():
-    """A future edit that deletes the re-review step entirely must fail here —
-    it's an explicit part of the fix's scope, not just an implementation detail
-    of the other assertions."""
+def test_git_workflow_section_requires_a_second_pass_after_fixes():
+    """A future edit that deletes the re-read/re-confirm step entirely must fail
+    here — a single-pass review with no post-fix verification lets fix-induced
+    regressions through (a fix for finding X could introduce finding Y in the
+    same file or an adjacent one)."""
     section = _git_workflow_section()
-    assert section.count("git-pr-workflows:code-reviewer") >= 2, (
-        "expected the code-reviewer subagent to be invoked twice: once for the "
-        "initial review, once to re-confirm after fixes are applied"
-    )
-    assert "Re-run" in section, (
-        "expected an explicit re-review step after fixes are applied, not just "
-        "a single one-shot review"
+    # The re-read step must be instructed (issue #12: re-run of a subagent replaced
+    # with re-read of touched files — the invariant is a SECOND verification pass,
+    # not the mechanism used to perform it)
+    assert "Re-read all files your fixes touched" in section, (
+        "expected an explicit second-pass verification step after applying fixes — "
+        "a single-pass review lets fix-induced regressions through"
     )
 
 
@@ -154,21 +181,26 @@ def test_git_workflow_section_scopes_the_defer_allowance_to_the_re_review_pass()
 def test_git_workflow_section_full_chain_step_order():
     """Regression guard beyond the pairwise review-before-commit and
     fix-before-commit checks above: the four steps must appear in this exact
-    relative order — initial review, fix, re-review, commit. A future edit
-    that swapped step 2 and 3 (fix findings AFTER the confirmation re-review,
+    relative order — initial review, fix, second pass, commit. A future edit
+    that swapped step 2 and 3 (fix findings AFTER the confirmation re-read,
     instead of before it) would pass every pairwise "before commit" check
     individually while still being wrong."""
     section = _git_workflow_section()
-    initial_review_idx = section.find("git-pr-workflows:code-reviewer")
+    # issue #12: "git-pr-workflows:code-reviewer" replaced by "rigorous manual
+    # code-review pass"
+    initial_review_idx = section.find("rigorous manual code-review pass")
     fix_idx = section.find("Fix every finding")
-    re_review_idx = section.find("Re-run")
+    # issue #12: "Re-run" (subagent) replaced by "Re-read all files your fixes touched"
+    re_review_idx = section.find("Re-read all files your fixes touched")
     commit_idx = _final_commit_step_idx(section)
     assert -1 not in (initial_review_idx, fix_idx, re_review_idx, commit_idx), (
-        "expected all four step markers to be present in the section"
+        "expected all four step markers to be present in the section: "
+        f"initial-review={initial_review_idx}, fix={fix_idx}, "
+        f"re-read={re_review_idx}, commit={commit_idx}"
     )
     assert initial_review_idx < fix_idx < re_review_idx < commit_idx, (
         f"expected step order initial-review({initial_review_idx}) < "
-        f"fix({fix_idx}) < re-review({re_review_idx}) < commit({commit_idx}), "
+        f"fix({fix_idx}) < re-read({re_review_idx}) < commit({commit_idx}), "
         "got a different relative order"
     )
 

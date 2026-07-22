@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- `workflows/skill-rollout.js`: remove broken "Use Task/Agent tool to spawn code-reviewer subagent" instruction — the Task/Agent tool is unavailable from within a workflow `agent()` call (same harness constraint as `EnterWorktree`). Replace with a rigorous manual self-review procedure covering logic/correctness, SKILL.md structural compliance, eval design quality, data hygiene, and cross-file consistency; limitation recorded per-skill in `needsHumanReview` as `issue #12`. JS-level comment added documenting the constraint and the correct Option 2 path if harness ever lifts it.
 
 ### Security
 - Nothing yet
