@@ -9,7 +9,6 @@ export const meta = {
   ],
 }
 
-// Design doc: reference/plugin-rollout-automation-concept.md (migrated into this plugin).
 // This file ships INSIDE the skill-rollout plugin at workflows/skill-rollout.js and IS the single
 // source of truth — the run skill launches it via the Workflow tool with
 // scriptPath = resolve_config().workflowScriptPath (= ${pluginRoot}/workflows/skill-rollout.js).

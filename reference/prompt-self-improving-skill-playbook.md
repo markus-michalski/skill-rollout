@@ -1,8 +1,12 @@
 # Onboarding Meta-Prompt
 
 You are onboarding a Claude plugin repo into the skill self-improvement rollout process (see
-~/projekte/skill-evals/schema.md and the general playbook ~/SeaDrive/Meine Bibliotheken/002-Development/Claude_Code/docs/self_improving_skill/self-improving-skills.md
-for the underlying method). Target plugin repo: {PLUGIN_REPO_PATH}.
+{skillEvalsDir}/schema.md and the general playbook `reference/self-improving-skills.md` shipped
+inside this plugin for the underlying method). Target plugin repo: {PLUGIN_REPO_PATH}.
+
+`{skillEvalsDir}` and `{docsBase}` below mean the same machine-resolved paths the `run` skill
+already substituted when invoking this onboarding step (via `tool_resolve_config` — see
+`skills/run/SKILL.md`) — not literal folder names to create verbatim.
 
 ## Hard rule: never guess
 
@@ -50,7 +54,7 @@ don't infer from any other plugin you may have worked on before)
    plugin's subject matter is "fictional," is what determines whether Prompt 3 can be auto-generated.**
 
    Earlier drafts of this rule framed the question as "is the domain disposable-fictional (like
-   storyforge) or real-world (personal/legal/business data, like life-hub)?" — that framing is
+   storyforge) or real-world (personal/legal/business data)?" — that framing is
    WRONG and was corrected after checking: storyforge's own shared storage (`~/.storyforge/authors/`)
    contains a real, actively-used author profile (`ethan-cole`, not sandbox-prefixed) sitting
    alongside `zz-sandbox-author`, and its book-projects content root has git history of real book
@@ -120,32 +124,35 @@ don't infer from any other plugin you may have worked on before)
 Do not write anything yet. Report what you found before drafting, so I can catch any wrong
 assumption before it goes into a permanent playbook document.
 
-## Phase 2 — Draft ~/SeaDrive/Meine Bibliotheken/002-Development/Claude_Code/docs/self_improving_skill/self-improving-skill-{plugin-name}.md
+## Phase 2 — Draft {docsBase}/self-improving-skill-{plugin-name}.md
 
-Read this existing file purely as a structural template — section headings, formatting, level of
-detail, German-explanatory/English-prompt-block style — NOT as a source of facts:
-~/SeaDrive/Meine Bibliotheken/002-Development/Claude_Code/docs/self_improving_skill/self-improving-skill-storyforge.md.
-Every fact you write into the new file must come from Phase 1's findings about {PLUGIN_REPO_PATH}
-specifically — never copy that example file's own content (its specific MCP server name, paths,
-branch-protection details, etc.) into the new one.
+Use `reference/self-improving-skills.md` (shipped inside this plugin) as the structural template —
+its "Beispielprompt für evals.json" and "Beispielprompt für Skill Self-Improvement" sections are the
+generic Prompt 1/2 shape to adapt below, in the same section headings, formatting, level of detail,
+and German-explanatory/English-prompt-block style. Every fact you write into the new file must come
+from Phase 1's findings about {PLUGIN_REPO_PATH} specifically — never invent a fact that isn't in
+Phase 1's findings, and never carry over a repo-specific detail (an MCP server name, a path, a
+branch-protection fact) from any OTHER plugin's already-onboarded playbook you may have seen —
+each playbook's facts are specific to its own repo.
 
 - Opening paragraph + "Repo-Fakten" bullet list: plugin repo path, MCP server name + tool prefix
   (if any), deploy-location sync requirements (if any), branch protection / CI / merge-policy facts.
 - **First-time setup note (only if Phase 1 step 6 found no existing subfolder):** state explicitly
-  that ~/projekte/skill-evals/{plugin-name}/ doesn't exist yet, and that Prompt 1 (below) must
-  create it on its first run. Also create ~/projekte/skill-evals/{plugin-name}/STATUS.md now,
-  mirroring ~/projekte/skill-evals/storyforge/STATUS.md's format (same structural template, read for
-  format only): one row per skill, in folder order, with Simulated/Live checkbox columns and a Notes
-  column, header text adapted to this plugin's name. Use whichever layout step 0 found — nested
-  {PLUGIN_REPO_PATH}/skills/{{skill-name}}/SKILL.md for a plugin-type repo, or flat
+  that {skillEvalsDir}/{plugin-name}/ doesn't exist yet, and that Prompt 1 (below) must
+  create it on its first run. Also create {skillEvalsDir}/{plugin-name}/STATUS.md now: one row per
+  skill, in folder order, with Simulated/Live checkbox columns and a Notes column, header text
+  adapted to this plugin's name — see the status-legend table in `reference/eval-schema.md` for the
+  exact symbols (⬜/✅/🟦 N/A/🟨 NEEDS-HUMAN-REVIEW) and their meaning. Use whichever layout step 0
+  found — nested {PLUGIN_REPO_PATH}/skills/{{skill-name}}/SKILL.md for a plugin-type repo, or flat
   {PLUGIN_REPO_PATH}/{{skill-name}}/SKILL.md for a flat-collection repo — either way, the row list
   comes from that repo's real current directory contents, not assumed. For a flat-collection repo,
   every skill's Live column starts as 🟦 N/A (no MCP server exists for the whole repo, per step 3) —
   set that immediately rather than leaving it ⬜ for a live tier that will never apply.
-- **Prompt 1** (evals.json bauen, simulierter Tier): same shape as the template, referencing
-  ~/projekte/skill-evals/schema.md, saving to ~/projekte/skill-evals/{plugin-name}/{skill-name}/evals.json
-  (always this external location, per Phase 1 step 5).
-- **Prompt 2** (Loop laufen lassen, simulierter Tier): same shape as the template, adapted
+- **Prompt 1** (evals.json bauen, simulierter Tier): same shape as `reference/self-improving-skills.md`'s
+  example, referencing {skillEvalsDir}/schema.md, saving to
+  {skillEvalsDir}/{plugin-name}/{skill-name}/evals.json (always this external location, per Phase 1
+  step 5).
+- **Prompt 2** (Loop laufen lassen, simulierter Tier): same shape as the example, adapted
   paths/repo name, including the sync-to-deploy-locations step ONLY if Phase 1 found real deploy
   locations distinct from the source repo.
 - **Prompt 3** (Live-MCP-Tier): three possible outcomes, per step 3/3a's findings — do not blur
@@ -170,12 +177,12 @@ branch-protection details, etc.) into the new one.
 
 Before presenting the result, re-read the generated file against Phase 1's actual findings: does
 every stated fact trace back to something you actually verified for {PLUGIN_REPO_PATH} in Phase 1 —
-none of it copied from the storyforge template's own example content? Does Prompt 3's
+none of it copied from `reference/self-improving-skills.md`'s own example content? Does Prompt 3's
 presence/absence/blocked-state correctly match step 3/3a's findings (no MCP server → omitted; MCP
 server + confirmed fictional domain → full prompt; MCP server + real-world data or genuine
 uncertainty → blocked placeholder, never a ready-to-run prompt)? Did you guess anywhere instead of
 confirming or asking — including guessing a plugin into the "fictional" bucket without a positive,
 specific reason? If yes, stop and ask now rather than presenting it.
 
-Write the output in German (explanatory text) with English prompt blocks, matching the template
-file's style.
+Write the output in German (explanatory text) with English prompt blocks, matching
+`reference/self-improving-skills.md`'s style.
