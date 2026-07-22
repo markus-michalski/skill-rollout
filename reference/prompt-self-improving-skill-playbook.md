@@ -4,9 +4,9 @@ You are onboarding a Claude plugin repo into the skill self-improvement rollout 
 {skillEvalsDir}/schema.md and the general playbook `reference/self-improving-skills.md` shipped
 inside this plugin for the underlying method). Target plugin repo: {PLUGIN_REPO_PATH}.
 
-`{skillEvalsDir}` and `{docsBase}` below mean the same machine-resolved paths the `run` skill
-already substituted when invoking this onboarding step (via `tool_resolve_config` — see
-`skills/run/SKILL.md`) — not literal folder names to create verbatim.
+`{skillEvalsDir}` below means the same machine-resolved path the `run` skill already substituted
+when invoking this onboarding step (via `tool_resolve_config` — see `skills/run/SKILL.md`) — not a
+literal folder name to create verbatim.
 
 ## Hard rule: never guess
 
@@ -124,7 +124,7 @@ don't infer from any other plugin you may have worked on before)
 Do not write anything yet. Report what you found before drafting, so I can catch any wrong
 assumption before it goes into a permanent playbook document.
 
-## Phase 2 — Draft {docsBase}/self-improving-skill-{plugin-name}.md
+## Phase 2 — Draft {skillEvalsDir}/{plugin-name}/self-improving-skill-{plugin-name}.md
 
 Use `reference/self-improving-skills.md` (shipped inside this plugin) as the structural template —
 its "Beispielprompt für evals.json" and "Beispielprompt für Skill Self-Improvement" sections are the

@@ -113,7 +113,7 @@ function isValidPluginSlug(name) {
   return typeof name === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(name)
 }
 
-function skillRolloutPrompt(pluginName, pluginRepoPath, skillName, docsBase, skillEvalsDir, preIsolated, evalSchemaPath) {
+function skillRolloutPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, evalSchemaPath) {
   const isolationSection = preIsolated
     ? `## Concurrency isolation — already provided; do NOT call EnterWorktree
 
@@ -193,7 +193,7 @@ ${isolationSection}
 
 ## Source of truth — read these first, in order, don't re-derive what they already document
 
-1. ${docsBase}/self-improving-skill-${pluginName}.md
+1. ${skillEvalsDir}/${pluginName}/self-improving-skill-${pluginName}.md
    — the plugin-specific playbook (Prompt 1/2/3, repo facts: MCP server name/prefix if any, deploy
    sync locations, branch protection, whether a PreToolUse hook blocks \`gh pr create\`). This file
    is the authority on all plugin-specific facts — never assume storyforge's facts apply to a
@@ -327,28 +327,30 @@ if (typeof args === 'string') {
 const plugin = parsedArgs.plugin
 const pluginRepoPath = parsedArgs.pluginRepoPath
 const count = parsedArgs.count ?? 5 // safety-net default only — the run skill's contract is to always pass an explicit count (large sentinel if only max_duration was given)
-// Machine-specific paths, resolved by the run skill (skills/run/SKILL.md Step 1) via the MCP tool
-// resolve_config (which reads ~/.skill-rollout/config.yaml). The neutral defaults below only cover a
-// broken invocation where the caller omitted them — the real path lives in the user's config.yaml.
-const docsBase = parsedArgs.docsBase || '~/Documents/self_improving_skill'
+// Machine-specific path, resolved by the run skill (skills/run/SKILL.md Step 1) via the MCP tool
+// resolve_config (which reads ~/.skill-rollout/config.yaml). The neutral default below only covers a
+// broken invocation where the caller omitted it — the real path lives in the user's config.yaml.
 const skillEvalsDir = parsedArgs.skillEvalsDir || '~/projekte/skill-evals'
+const batchNotes = [] // cross-cutting notes (path/slug problems, onboarding issues) fed into the final digest
 // referenceDir: the plugin's own versioned generic docs (eval schema + onboarding meta-prompt),
 // passed by the run skill from resolve_config (= ${pluginRoot}/reference). These docs are GENERIC to
-// the rollout tool, so they live in-plugin, not in the per-machine docsBase / per-plugin skillEvalsDir.
-// When referenceDir is absent (older/broken invocation), the two derived paths gracefully fall back to
-// their pre-migration locations so nothing breaks either way.
+// the rollout tool, so they live in-plugin, not per-machine. The run skill always passes this — an
+// absent value means a broken/outdated invocation, not a normal case, so it's flagged rather than
+// silently substituted with a guessed path.
 const referenceDir = parsedArgs.referenceDir || null
+if (!referenceDir) {
+  batchNotes.push('referenceDir was not passed by the caller — expected from a current run skill invocation. Falling back to skillEvalsDir/schema.md and a placeholder onboarding-playbook path, which likely does not exist; onboarding a new plugin will probably fail until this is fixed at the call site.')
+}
 const evalSchemaPath = referenceDir ? `${referenceDir}/eval-schema.md` : `${skillEvalsDir}/schema.md`
 const onboardPlaybookPath = referenceDir
   ? `${referenceDir}/prompt-self-improving-skill-playbook.md`
-  : `${docsBase}/prompt-self-improving-skill-playbook.md`
+  : `${skillEvalsDir}/prompt-self-improving-skill-playbook.md`
 // preIsolated: the caller has already placed pluginRepoPath inside a DEDICATED, single-use git
 // worktree (created outside this script), so per-skill agents must NOT call EnterWorktree — they
 // work directly in the provided checkout instead. Use this on harnesses where subagent-side
 // EnterWorktree is unavailable (the cwd override is refused from a workflow-subagent context). The
 // operator owns the worktree's lifecycle. Defaults to false (agents self-isolate via EnterWorktree).
 const preIsolated = parsedArgs.preIsolated === true
-const batchNotes = [] // cross-cutting notes (path/slug problems, onboarding issues) fed into the final digest
 
 if (!isValidPluginSlug(plugin)) {
   return {
@@ -425,7 +427,7 @@ if (selection.onboardingNeeded) {
 documented in ${onboardPlaybookPath}
 ({PLUGIN_REPO_PATH} = ${pluginRepoPath}). Follow its Phase 1 (Investigate) / Phase 2 (Draft) / Phase 3
 (Self-check) exactly, including the "never guess" rule and the PreToolUse-hook check for
-\`gh pr create\`. This creates ${docsBase}/self-improving-skill-${plugin}.md
+\`gh pr create\`. This creates ${skillEvalsDir}/${plugin}/self-improving-skill-${plugin}.md
 and ${skillEvalsDir}/${plugin}/STATUS.md (mirroring storyforge/STATUS.md's format and the
 N/A/NEEDS-HUMAN-REVIEW conventions in schema.md). If anything cannot be confirmed with certainty,
 list it in needsHumanReview instead of guessing — never guess. But set ok=false ONLY when the
@@ -446,7 +448,7 @@ directly in ${pluginRepoPath}; branch off the remote main (\`git fetch origin &&
 onboard-${plugin} origin/main\`, or the real default branch), commit/push/PR from there, and do NOT
 touch the operator's main checkout or any other worktree. There is no ExitWorktree to call.`
   : `If this onboarding phase will create any commits/PRs directly in ${pluginRepoPath} (as opposed to
-only in ${docsBase} or ${skillEvalsDir}): \`cd "${pluginRepoPath}"\` and call \`EnterWorktree\` FIRST,
+only in ${skillEvalsDir}): \`cd "${pluginRepoPath}"\` and call \`EnterWorktree\` FIRST,
 before any investigation/reads/edits in that repo (not just before the commit — same reasoning as
 the per-skill rollout prompt: entering late means what you already read/edited never makes it into
 the worktree). Do all such work inside the worktree, then \`ExitWorktree({action: "keep"})\` if any
@@ -504,7 +506,7 @@ for (const skill of skillsToProcess) {
 
   let result
   try {
-    result = await agent(skillRolloutPrompt(plugin, pluginRepoPath, skill.name, docsBase, skillEvalsDir, preIsolated, evalSchemaPath), {
+    result = await agent(skillRolloutPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, evalSchemaPath), {
       label: `rollout:${skill.name}`,
       phase: 'Rollout',
       schema: SKILL_RESULT_SCHEMA,

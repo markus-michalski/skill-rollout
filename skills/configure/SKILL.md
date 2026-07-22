@@ -1,42 +1,43 @@
 ---
 name: configure
 description: |
-  Interactive configuration for skill-rollout — set the docs and eval-state paths
-  in ~/.skill-rollout/config.yaml. Use when: (1) User says "skill-rollout configure",
-  "konfigurieren", "Pfade anpassen", (2) resolve_config reports configExists=false
-  and the defaults don't match this machine.
+  Interactive configuration for skill-rollout — set the eval-state path in
+  ~/.skill-rollout/config.yaml. Use when: (1) User says "skill-rollout configure",
+  "konfigurieren", "Pfad anpassen", (2) resolve_config reports configExists=false
+  and the default doesn't match this machine.
 model: claude-sonnet-5
 user-invocable: true
 ---
 
 # Configure
 
-Interactive editor for `~/.skill-rollout/config.yaml` — the two machine-specific
-paths the rollout needs.
+Interactive editor for `~/.skill-rollout/config.yaml` — the one machine-specific
+path the rollout needs.
 
 ## Workflow
 
 ### 1. Read Current Config
 
 Call the MCP tool `tool_resolve_config` to show what is currently in effect
-(`docsBase`, `skillEvalsDir`, `configExists`). If `configExists` is `false`, no
-config file exists yet and the neutral defaults are being used — say so.
+(`skillEvalsDir`, `configExists`). If `configExists` is `false`, no config file
+exists yet and the neutral default is being used — say so.
 
 ### 2. Ask What to Change
 
-Use AskUserQuestion for the two paths:
-- **self_improving_docs** — where the self-improving-skill docs + per-plugin
-  playbooks (`self-improving-skill-*.md`) live on this machine.
-- **skill_evals** — where per-plugin eval state (`STATUS.md`, `loop-log.md`,
-  `batch-digest.md`) lives (default `~/projekte/skill-evals`).
+Use AskUserQuestion for the one path:
+- **skill_evals** — where per-plugin rollout state lives (default `~/projekte/skill-evals`).
+  Everything for one target plugin lives at `{skill_evals}/{plugin}/`: `STATUS.md`,
+  `batch-digest.md`, the per-plugin playbook (`self-improving-skill-{plugin}.md`), and
+  per-skill `loop-log.md`/`loop-state.json`/`evals.json`. The generic docs (schema,
+  onboarding meta-prompt) ship inside this plugin, not here.
 
-Both accept absolute paths or `~`. No trailing slash.
+Accepts an absolute path or `~`. No trailing slash.
 
 ### 3. Apply Changes
 
 Detect the platform first (see `skills/setup/SKILL.md` Step 0 for the `<PY>`
 resolution). Write the config with the write-then-run pattern — save a short
-Python script to `~/.skill-rollout/_configure_scratch.py` with the new values
+Python script to `~/.skill-rollout/_configure_scratch.py` with the new value
 substituted directly into the file, then run it via the venv's Python (POSIX:
 `~/.skill-rollout/venv/bin/python3 <path>`, Windows:
 `& "$env:USERPROFILE\.skill-rollout\venv\Scripts\python.exe" <path>`). Never pass
@@ -46,7 +47,6 @@ The script should write valid YAML to `~/.skill-rollout/config.yaml`:
 
 ```yaml
 paths:
-  self_improving_docs: "<value>"
   skill_evals: "<value>"
 ```
 

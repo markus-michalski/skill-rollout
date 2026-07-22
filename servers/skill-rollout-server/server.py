@@ -27,10 +27,10 @@ mcp = FastMCP("skill-rollout-mcp")
 def tool_resolve_config() -> dict:
     """Resolve machine-specific paths for a rollout run.
 
-    Returns docsBase, skillEvalsDir, workflowScriptPath (the workflow.js shipped
-    inside this plugin), pluginRoot, and config-file metadata. All paths are
-    absolute, forward-slash form — ready to hand to the Workflow tool and the
-    file tools on both Windows and POSIX.
+    Returns skillEvalsDir, workflowScriptPath (the workflow.js shipped inside
+    this plugin), referenceDir, pluginRoot, and config-file metadata. All paths
+    are absolute, forward-slash form — ready to hand to the Workflow tool and
+    the file tools on both Windows and POSIX.
     """
     return resolve_config()
 

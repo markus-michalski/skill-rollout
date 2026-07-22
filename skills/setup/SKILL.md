@@ -105,11 +105,11 @@ Single-line, uses `<PY>` (no venv needed):
 ```
 
 Then tell the user the config was copied to `~/.skill-rollout/config.yaml` and
-that they should set the two paths for this machine (run `/skill-rollout:configure`
+that they should set the one path for this machine (run `/skill-rollout:configure`
 or edit directly):
-- `paths.self_improving_docs` — where the self-improving-skill docs + per-plugin
-  playbooks live
-- `paths.skill_evals` — where per-plugin eval state lives (default `~/projekte/skill-evals`)
+- `paths.skill_evals` — where per-plugin rollout state lives (default
+  `~/projekte/skill-evals`): `STATUS.md`, `batch-digest.md`, the per-plugin
+  playbook (`self-improving-skill-{plugin}.md`), and per-skill loop files
 
 ### Step 6: Verify MCP Server
 
