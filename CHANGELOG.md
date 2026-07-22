@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `workflows/skill-rollout.js`: remove broken "Use Task/Agent tool to spawn code-reviewer subagent" instruction — the Task/Agent tool is unavailable from within a workflow `agent()` call (same harness constraint as `EnterWorktree`). Replace with a rigorous manual self-review procedure covering logic/correctness, SKILL.md structural compliance, eval design quality, data hygiene, and cross-file consistency; limitation recorded per-skill in `needsHumanReview` as `issue #12`. JS-level comment added documenting the constraint and the correct Option 2 path if harness ever lifts it.
+- `reference/prompt-self-improving-skill-playbook.md`: prohibit generating a Prompt 3 (live-MCP tier) that instructs spawning a subagent for MCP tool execution — the Task/Agent tool is unavailable inside the skill-rollout Workflow's per-skill agent context (same constraint as `EnterWorktree`), confirmed via repeated silent substitution in real rollout runs (issue #15). New guidance mandates direct MCP tool execution with a TOOL CALL LOG and independent post-write verification instead.
 
 ### Security
 - Nothing yet
