@@ -24,21 +24,25 @@ per-plugin eval state is queryable over MCP.
 
 ## Status
 
-Early scaffold. Building in this order (TDD-first):
+Functionally complete and in active use (tested end-to-end against a real target plugin).
 
 1. ✅ Plugin scaffold (manifest, MCP shell, config, parsers, launch wrapper)
-2. ⬜ Smoke tests (`tests/smoke/`)
-3. ⬜ MCP server — finalize + harden the four read-only tools
-4. ⬜ `workflows/skill-rollout.js` — ported from mm-skills, paths via `resolve_config()`
-5. ⬜ Skills — `run`, `status`, `setup`, `configure`, `help`
-6. ⬜ Design-doc migration into `reference/`
-7. ⬜ Governance (PolyForm NC + CLA + branch protection)
+2. ✅ Smoke tests (`tests/smoke/`), CI on ubuntu-latest + windows-latest
+3. ✅ MCP server — four read-only tools (`tool_resolve_config`, `tool_list_evals`,
+   `tool_get_batch_status`, `tool_get_eval_state`)
+4. ✅ `workflows/skill-rollout.js` — ships in-plugin, launched via its own
+   `workflowScriptPath`, no manual deploy copy
+5. ✅ Skills — `run`, `status`, `setup`, `configure`, `help`
+6. ✅ Generic docs migrated into `reference/` (eval schema, onboarding meta-prompt,
+   methodology overview) — the only thing that stays external per-machine is
+   `skill_evals` (per-plugin state + generated playbooks)
+7. ⬜ Governance (PolyForm NC + CLA + branch protection) — the one remaining step
 
 ## MCP Tools
 
 | Tool | Purpose |
 |------|---------|
-| `tool_resolve_config` | Resolve machine-specific paths (docs, evals, workflow script) |
+| `tool_resolve_config` | Resolve machine-specific paths (eval state, in-plugin docs, workflow script) |
 | `tool_list_evals` | Per-skill eval status from a plugin's `STATUS.md` |
 | `tool_get_batch_status` | The running `batch-digest.md` for a plugin |
 | `tool_get_eval_state` | `loop-state.json` + `loop-log.md` tail for one skill |
