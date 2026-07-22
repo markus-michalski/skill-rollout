@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial plugin scaffold: manifest, MCP server shell, config resolution, eval-state parsers, OS-agnostic launch wrapper.
+- Nothing yet
 
 ### Changed
 - Nothing yet
@@ -25,4 +25,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Nothing yet
 
-[Unreleased]: https://github.com/markus-michalski/skill-rollout/compare/95d74f1...HEAD
+## [1.0.0] - 2026-07-22
+
+### Added
+- migrate generic docs into the plugin (reference/) (#5)
+- add setup, configure, status, and help skills (#4)
+- add the run skill (batch rollout entry point) (#3)
+- bring the batch workflow in-plugin (#2)
+
+### Changed
+- add Unreleased comparison link to CHANGELOG
+- colocate per-plugin playbook with its eval state (#7)
+- add smoke-test suite and CI matrix (#1)
+- Initial plugin scaffold
+
+### Fixed
+- actually invoke code-reviewer subagent in autonomous mode (#9)
+- bind referenceDir/skillEvalsDir for target-repo Onboard agent (#8)
+- remove private-doc dependency, make onboarding self-contained (#6)
+
+[1.0.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.0.0

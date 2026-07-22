@@ -1,6 +1,6 @@
 {
   "name": "skill-rollout",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Unattended, sequential runner for the self-improvement skill-rollout process across any Claude plugin — one batch, no auto-chaining.",
   "author": {
     "name": "Markus Michalski"
