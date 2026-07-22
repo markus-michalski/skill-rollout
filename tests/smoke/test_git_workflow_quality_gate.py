@@ -63,7 +63,8 @@ def test_git_workflow_section_documents_review_limitation_and_reason():
     constraint, not a policy choice) so a future editor knows not to restore
     the broken instruction, and knows the correct fix path (issue #13)."""
     section = _git_workflow_section()
-    # Must acknowledge the tool is unavailable (not silently skip, not just do manual review)
+    # Must acknowledge the tool is unavailable (not silently skip, not just do manual
+    # review)
     assert "Task/Agent tool" in section, (
         "git-workflow section must mention the Task/Agent tool and explain why it "
         "cannot be used — not silently omit it, which would suggest the review gap "
@@ -85,8 +86,9 @@ def test_git_workflow_section_mandates_concrete_review_criteria():
     for category in ("Logic/correctness", "SKILL.md structural compliance",
                      "Eval design quality", "Data hygiene", "Cross-file consistency"):
         assert category in section, (
-            f"review step must list '{category}' as an explicit category to check — "
-            "vague 'do a review' instructions reproduce the original aspirational-prose failure"
+            f"review step must list '{category}' as an explicit category to "
+            "check — vague 'do a review' instructions reproduce the original "
+            "aspirational-prose failure"
         )
 
 
@@ -102,7 +104,8 @@ def test_git_workflow_section_requires_review_before_commit():
     """The review pass (whether subagent or manual) must be instructed BEFORE
     the final commit step — the review must gate the commit, not follow it."""
     section = _git_workflow_section()
-    # Use the manual review instruction as the review marker (issue #12: subagent unavailable)
+    # Use the manual review instruction as the review marker (issue #12: subagent
+    # unavailable)
     review_idx = section.find("rigorous manual code-review pass")
     commit_idx = _final_commit_step_idx(section)
     assert review_idx != -1 and review_idx < commit_idx, (
@@ -183,7 +186,8 @@ def test_git_workflow_section_full_chain_step_order():
     instead of before it) would pass every pairwise "before commit" check
     individually while still being wrong."""
     section = _git_workflow_section()
-    # issue #12: "git-pr-workflows:code-reviewer" replaced by "rigorous manual code-review pass"
+    # issue #12: "git-pr-workflows:code-reviewer" replaced by "rigorous manual
+    # code-review pass"
     initial_review_idx = section.find("rigorous manual code-review pass")
     fix_idx = section.find("Fix every finding")
     # issue #12: "Re-run" (subagent) replaced by "Re-read all files your fixes touched"
