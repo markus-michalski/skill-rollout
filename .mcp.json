@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "skill-rollout-mcp": {
+      "type": "stdio",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/run-server",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/servers/skill-rollout-server/run.py"],
+      "env": {
+        "CLAUDE_PLUGIN_ROOT": "${HOME}/.claude/plugins/marketplaces/skill-rollout"
+      }
+    }
+  }
+}

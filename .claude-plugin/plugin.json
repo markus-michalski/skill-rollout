@@ -1,0 +1,20 @@
+{
+  "name": "skill-rollout",
+  "version": "0.1.0",
+  "description": "Unattended, sequential runner for the self-improvement skill-rollout process across any Claude plugin — one batch, no auto-chaining.",
+  "author": {
+    "name": "Markus Michalski"
+  },
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "keywords": [
+    "skill-rollout",
+    "self-improvement",
+    "evals",
+    "workflow",
+    "automation",
+    "claude-plugin",
+    "mcp"
+  ]
+}

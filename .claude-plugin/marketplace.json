@@ -1,0 +1,14 @@
+{
+  "name": "skill-rollout",
+  "owner": {
+    "name": "markus-michalski"
+  },
+  "plugins": [
+    {
+      "name": "skill-rollout",
+      "description": "Unattended, sequential runner for the self-improvement skill-rollout process across any Claude plugin — one batch, no auto-chaining.",
+      "version": "0.1.0",
+      "source": "./"
+    }
+  ]
+}

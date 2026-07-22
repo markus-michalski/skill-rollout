@@ -1,0 +1,12 @@
+# skill-rollout Configuration
+# Copy to ~/.skill-rollout/config.yaml and adjust paths for this machine.
+# If this file is missing, resolve_config() falls back to the defaults below.
+
+paths:
+  # Design docs + per-plugin playbooks (self-improving-skill-*.md).
+  # No trailing slash.
+  self_improving_docs: "~/SeaDrive/Meine Bibliotheken/002-Development/Claude_Code/docs/self_improving_skill"
+
+  # Per-plugin eval state (STATUS.md, loop-log.md, batch-digest.md, ...).
+  # No trailing slash.
+  skill_evals: "~/projekte/skill-evals"
