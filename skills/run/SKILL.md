@@ -33,17 +33,18 @@ guarantees the script is checked out LF-only (the Workflow tool rejects a script
 
 - **Paths (machine-specific).** Call the MCP tool **`tool_resolve_config`** (server
   `skill-rollout-mcp`). It returns, as absolute forward-slash paths ready to use on any OS:
-  - `docsBase` — where the per-plugin playbooks (`self-improving-skill-{plugin}.md`) live
-  - `skillEvalsDir` — per-plugin eval state (`STATUS.md`, `loop-log.md`, `batch-digest.md`, ...)
+  - `skillEvalsDir` — per-plugin eval state AND the per-plugin playbook: everything for one
+    target plugin lives at `skillEvalsDir/{plugin}/` — `STATUS.md`, `batch-digest.md`,
+    `self-improving-skill-{plugin}.md`, and per-skill `loop-log.md`/`loop-state.json`
   - `workflowScriptPath` — the in-plugin `workflows/skill-rollout.js` to launch in Step 2
   - `referenceDir` — the plugin's own versioned generic docs (eval schema + onboarding
     meta-prompt); the workflow reads the schema and onboarding playbook from here
   - `pluginRoot`, `configFile`, `configExists`
 
-  If `configExists` is `false`, the neutral defaults are in effect — that is fine for a first run,
-  but if `docsBase`/`skillEvalsDir` don't match this machine, tell the user to run
+  If `configExists` is `false`, the neutral default is in effect — that is fine for a first run,
+  but if `skillEvalsDir` doesn't match this machine, tell the user to run
   `/skill-rollout:configure` (or copy `config/config.example.yaml` to `~/.skill-rollout/config.yaml`)
-  and adjust the paths, then re-invoke. Do NOT hand-guess paths — `tool_resolve_config` is the only
+  and adjust the path, then re-invoke. Do NOT hand-guess paths — `tool_resolve_config` is the only
   source of truth here.
 - `{plugin}` — a slug (lowercase letters/digits/hyphens) that must resolve to a real, existing repo
   path. If ambiguous, not given, or doesn't look like a valid slug, ask — this is not something to
@@ -95,7 +96,7 @@ then pass as the `pluginRepoPath` *argument* to the workflow.
 Then call the `Workflow` tool with **`scriptPath: {workflowScriptPath}`** (the in-plugin path from
 Step 1 — do NOT hardcode any `~/.claude/workflows/` path), args: `{ plugin: "{plugin-name}",
 pluginRepoPath: "{worktreePath}", preIsolated: true, count: {count or a large number like 999 if only
-max_duration was given}, docsBase: "{resolved docsBase}", skillEvalsDir: "{resolved skillEvalsDir}",
+max_duration was given}, skillEvalsDir: "{resolved skillEvalsDir}",
 referenceDir: "{resolved referenceDir}" }`. Note **`pluginRepoPath` points at the WORKTREE**, and
 `preIsolated: true` tells the agents to work
 directly in it (branch per skill off origin/{defaultBranch}) instead of calling `EnterWorktree`. Runs

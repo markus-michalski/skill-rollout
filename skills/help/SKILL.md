@@ -27,14 +27,14 @@ config.
 |-------|--------------|
 | `/skill-rollout:run {plugin} {count} [max_duration]` | Launch a batch: process N skills of `{plugin}` one at a time, stopping after `count` skills or `max_duration`. Creates an isolated worktree, runs the in-plugin workflow, then reports — and stops (never starts a second batch). |
 | `/skill-rollout:status {plugin}` | Read-only progress: the running batch digest + per-skill eval status (fully-done counts, NEEDS-HUMAN-REVIEW flags). |
-| `/skill-rollout:configure` | Set the two machine-specific paths (`self_improving_docs`, `skill_evals`) in `~/.skill-rollout/config.yaml`. |
+| `/skill-rollout:configure` | Set the machine-specific `skill_evals` path in `~/.skill-rollout/config.yaml`. |
 | `/skill-rollout:setup` | First-time setup: create the venv, install dependencies, seed the config. Run once after install, or to repair a non-responding MCP server. |
 | `/skill-rollout:help` | This overview. |
 
 ## Typical flow
 
 1. `/skill-rollout:setup` (once) → then restart Claude Code so the MCP server loads.
-2. `/skill-rollout:configure` → point `self_improving_docs` / `skill_evals` at this machine.
+2. `/skill-rollout:configure` → point `skill_evals` at this machine (if the default doesn't fit).
 3. `/skill-rollout:run {plugin} 3` → run a small daytime batch.
 4. `/skill-rollout:status {plugin}` → check progress mid-run.
 5. Review + merge the PRs the batch opened, then invoke `run` again for the next batch.

@@ -6,7 +6,6 @@ from tools.shared import config as config_mod
 from tools.state import parsers
 
 REQUIRED_CONFIG_KEYS = {
-    "docsBase",
     "skillEvalsDir",
     "workflowScriptPath",
     "referenceDir",
@@ -34,7 +33,7 @@ def test_resolve_config_has_all_keys_and_forward_slashes():
     cfg = config_mod.resolve_config()
     assert REQUIRED_CONFIG_KEYS <= set(cfg)
     # Every path is forward-slash, never a Windows backslash.
-    for key in ("docsBase", "skillEvalsDir", "workflowScriptPath", "pluginRoot"):
+    for key in ("skillEvalsDir", "workflowScriptPath", "referenceDir", "pluginRoot"):
         assert "\\" not in cfg[key], f"{key} must be forward-slash: {cfg[key]}"
     assert cfg["workflowScriptPath"].endswith("/workflows/skill-rollout.js")
     assert cfg["configExists"] in ("true", "false")
