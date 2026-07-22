@@ -9,6 +9,7 @@ so the calling skill can decide what to do.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,23 @@ _DONE = "✅"
 _NA = "🟦"
 _NOT_STARTED = "⬜"
 
+# plugin/skill are interpolated into a filesystem path — enforce the slug shape
+# the tool docstrings promise, so a value like "../../etc" can't read outside
+# skillEvalsDir. Skill dir names are hyphenated slugs (e.g. "altcha-forms").
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def _require_slug(value: str, kind: str) -> None:
+    if not isinstance(value, str) or not _SLUG_RE.match(value):
+        raise ValueError(
+            f"invalid {kind}: {value!r} — must be lowercase letters, digits, and "
+            "hyphens only (no path separators or traversal)."
+        )
+
 
 def _plugin_dir(plugin: str) -> Path:
-    """Return {skillEvalsDir}/{plugin} as an absolute Path."""
+    """Return {skillEvalsDir}/{plugin} as an absolute Path (slug-validated)."""
+    _require_slug(plugin, "plugin")
     return Path(resolve_config()["skillEvalsDir"]) / plugin
 
 
@@ -114,6 +129,7 @@ def get_batch_status(plugin: str) -> dict[str, Any]:
 
 def get_eval_state(plugin: str, skill: str, log_tail_lines: int = 60) -> dict[str, Any]:
     """Return loop-state.json (parsed) + the tail of loop-log.md for one skill."""
+    _require_slug(skill, "skill")
     skill_dir = _plugin_dir(plugin) / skill
     state_file = skill_dir / "loop-state.json"
     log_file = skill_dir / "loop-log.md"
