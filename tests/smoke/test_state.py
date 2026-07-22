@@ -9,6 +9,7 @@ REQUIRED_CONFIG_KEYS = {
     "docsBase",
     "skillEvalsDir",
     "workflowScriptPath",
+    "referenceDir",
     "pluginRoot",
     "configFile",
     "configExists",

@@ -70,11 +70,16 @@ def resolve_config() -> dict[str, str]:
 
     plugin_root = get_plugin_root()
     workflow_script = plugin_root / "workflows" / "skill-rollout.js"
+    reference_dir = plugin_root / "reference"
 
     return {
         "docsBase": _abs_posix(docs_base),
         "skillEvalsDir": _abs_posix(skill_evals),
         "workflowScriptPath": workflow_script.as_posix(),
+        # In-plugin, versioned generic docs (eval schema + onboarding meta-prompt +
+        # design docs). The workflow reads the schema and onboarding playbook from
+        # here; per-plugin playbooks (self-improving-skill-*.md) stay in docsBase.
+        "referenceDir": reference_dir.as_posix(),
         "pluginRoot": plugin_root.as_posix(),
         "configFile": CONFIG_FILE.as_posix(),
         "configExists": "true" if CONFIG_FILE.exists() else "false",
