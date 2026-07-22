@@ -1,12 +1,16 @@
 # Onboarding Meta-Prompt
 
 You are onboarding a Claude plugin repo into the skill self-improvement rollout process (see
-{skillEvalsDir}/schema.md and the general playbook `reference/self-improving-skills.md` shipped
-inside this plugin for the underlying method). Target plugin repo: {PLUGIN_REPO_PATH}.
+{referenceDir}/eval-schema.md and the general playbook {referenceDir}/self-improving-skills.md,
+both shipped inside the skill-rollout plugin, for the underlying method). Target plugin repo:
+{PLUGIN_REPO_PATH}.
 
-`{skillEvalsDir}` below means the same machine-resolved path the `run` skill already substituted
-when invoking this onboarding step (via `tool_resolve_config` — see `skills/run/SKILL.md`) — not a
-literal folder name to create verbatim.
+`{skillEvalsDir}` and `{referenceDir}` below mean the same machine-resolved, absolute paths the
+`run` skill already substituted when invoking this onboarding step (via `tool_resolve_config` — see
+`skills/run/SKILL.md`) — not literal folder names to create verbatim, and NOT relative to your
+current working directory. Your working directory for this onboarding task is {PLUGIN_REPO_PATH}
+(the TARGET plugin you're onboarding), which is a different repo than skill-rollout itself — do not
+resolve `reference/...` relative to it; always use the absolute `{referenceDir}` path given here.
 
 ## Hard rule: never guess
 
@@ -91,11 +95,11 @@ don't infer from any other plugin you may have worked on before)
    private-repo evals inside the repo itself — that branch was removed; if you find existing
    in-repo evals.json files from before this change, they've already been migrated externally as a
    one-time cleanup, don't recreate the in-repo copy.)
-6. Check whether ~/projekte/skill-evals/{plugin-name}/ already exists. Note: ~/projekte/skill-evals
-   itself (README.md, schema.md) is a shared resource used across every plugin/repo in this rollout
-   and already exists — do NOT recreate it. The question is only whether THIS plugin's own subfolder
-   exists yet. If it doesn't, this is the first skill from this plugin being onboarded — flag this so
-   Phase 2 also creates a ~/projekte/skill-evals/{plugin-name}/STATUS.md tracker (see Phase 2).
+6. Check whether {skillEvalsDir}/{plugin-name}/ already exists. The question is only whether THIS
+   plugin's own subfolder exists yet — {skillEvalsDir} itself is expected to already exist as a
+   shared resource across every plugin/repo in this rollout, do NOT recreate it. If the plugin's own
+   subfolder doesn't exist, this is the first skill from this plugin being onboarded — flag this so
+   Phase 2 also creates a {skillEvalsDir}/{plugin-name}/STATUS.md tracker (see Phase 2).
 7. If public with a GitHub remote: check branch protection on the default branch
    (`gh api repos/{owner}/{repo}/branches/{default}/protection`) — required reviews, required
    status checks, allowed merge methods (merge commit / squash / rebase).
@@ -126,7 +130,9 @@ assumption before it goes into a permanent playbook document.
 
 ## Phase 2 — Draft {skillEvalsDir}/{plugin-name}/self-improving-skill-{plugin-name}.md
 
-Use `reference/self-improving-skills.md` (shipped inside this plugin) as the structural template —
+Use {referenceDir}/self-improving-skills.md (shipped inside the skill-rollout plugin — an ABSOLUTE
+path, resolve it exactly as given, do NOT interpret `reference/` as relative to {PLUGIN_REPO_PATH})
+as the structural template —
 its "Beispielprompt für evals.json" and "Beispielprompt für Skill Self-Improvement" sections are the
 generic Prompt 1/2 shape to adapt below, in the same section headings, formatting, level of detail,
 and German-explanatory/English-prompt-block style. Every fact you write into the new file must come
@@ -141,15 +147,17 @@ each playbook's facts are specific to its own repo.
   that {skillEvalsDir}/{plugin-name}/ doesn't exist yet, and that Prompt 1 (below) must
   create it on its first run. Also create {skillEvalsDir}/{plugin-name}/STATUS.md now: one row per
   skill, in folder order, with Simulated/Live checkbox columns and a Notes column, header text
-  adapted to this plugin's name — see the status-legend table in `reference/eval-schema.md` for the
+  adapted to this plugin's name — see the status-legend table in {referenceDir}/eval-schema.md for the
   exact symbols (⬜/✅/🟦 N/A/🟨 NEEDS-HUMAN-REVIEW) and their meaning. Use whichever layout step 0
   found — nested {PLUGIN_REPO_PATH}/skills/{{skill-name}}/SKILL.md for a plugin-type repo, or flat
   {PLUGIN_REPO_PATH}/{{skill-name}}/SKILL.md for a flat-collection repo — either way, the row list
   comes from that repo's real current directory contents, not assumed. For a flat-collection repo,
   every skill's Live column starts as 🟦 N/A (no MCP server exists for the whole repo, per step 3) —
   set that immediately rather than leaving it ⬜ for a live tier that will never apply.
-- **Prompt 1** (evals.json bauen, simulierter Tier): same shape as `reference/self-improving-skills.md`'s
-  example, referencing {skillEvalsDir}/schema.md, saving to
+- **Prompt 1** (evals.json bauen, simulierter Tier): same shape as {referenceDir}/self-improving-skills.md's
+  example, referencing the skill-rollout plugin's reference/eval-schema.md (this is the correct target
+  location to write into the NEW playbook's text — never the {skillEvalsDir}/schema.md path, which
+  does not exist), saving to
   {skillEvalsDir}/{plugin-name}/{skill-name}/evals.json (always this external location, per Phase 1
   step 5).
 - **Prompt 2** (Loop laufen lassen, simulierter Tier): same shape as the example, adapted
@@ -177,7 +185,7 @@ each playbook's facts are specific to its own repo.
 
 Before presenting the result, re-read the generated file against Phase 1's actual findings: does
 every stated fact trace back to something you actually verified for {PLUGIN_REPO_PATH} in Phase 1 —
-none of it copied from `reference/self-improving-skills.md`'s own example content? Does Prompt 3's
+none of it copied from {referenceDir}/self-improving-skills.md's own example content? Does Prompt 3's
 presence/absence/blocked-state correctly match step 3/3a's findings (no MCP server → omitted; MCP
 server + confirmed fictional domain → full prompt; MCP server + real-world data or genuine
 uncertainty → blocked placeholder, never a ready-to-run prompt)? Did you guess anywhere instead of
@@ -185,4 +193,4 @@ confirming or asking — including guessing a plugin into the "fictional" bucket
 specific reason? If yes, stop and ask now rather than presenting it.
 
 Write the output in German (explanatory text) with English prompt blocks, matching
-`reference/self-improving-skills.md`'s style.
+{referenceDir}/self-improving-skills.md's style.
