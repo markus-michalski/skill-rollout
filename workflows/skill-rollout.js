@@ -229,6 +229,16 @@ the plugin playbook's Prompt 2 exactly, with these autonomous-mode additions:
   ${pluginRepoPath}'s repo IMMEDIATELY (\`gh issue create\`), never just mention it in prose. This
   applies in the simulated tier too, not only the live tier — a real example: a book-conceptualizer
   run found two stale skill-name references this way and they'd have been lost if not filed.
+- **Incremental progress logging** — after every full grade-fix-regrade cycle (one iteration of
+  the improvement loop): immediately append a timestamped entry (real time via \`date\`, same as the
+  batch digest) to \`${skillEvalsDir}/${pluginName}/${skillName}/loop-log.md\` documenting what you
+  fixed and what the updated score is, and update \`loop-state.json\` to reflect current iteration
+  state. Do NOT defer both writes to the "Before you finish" section — that section appends the
+  final loop-log.md entry plus STATUS.md and batch-digest.md; this step handles the per-iteration
+  entries that make a mid-run \`/skill-rollout:status\` check meaningful. A loop-log.md that stays
+  empty until the skill finishes defeats its own stated purpose: "a human checking on a long batch
+  mid-run doesn't have to wait for the whole batch to finish or dig through individual loop-logs"
+  (from the batch-digest.md instructions in the "Before you finish" section).
 
 **Prompt 3 (live-MCP tier) — only if ALL of: the plugin has a real MCP server (per the playbook's
 repo facts) AND this skill's SKILL.md actually calls domain MCP tools (grep it — don't assume from a
@@ -321,9 +331,10 @@ Everything else (including NEEDS-HUMAN-REVIEW eval-design flags) does not block 
 
 ## Before you finish
 
-Update ${skillEvalsDir}/${pluginName}/${skillName}/loop-log.md, loop-state.json, and this
-skill's row in ${skillEvalsDir}/${pluginName}/STATUS.md. Sync any SKILL.md change to every
-deploy location the plugin playbook's repo facts list.
+Append the final entry to ${skillEvalsDir}/${pluginName}/${skillName}/loop-log.md (per-iteration
+entries were already written during Prompt 2 — this is the closing entry), write the final
+loop-state.json, and update this skill's row in ${skillEvalsDir}/${pluginName}/STATUS.md. Sync
+any SKILL.md change to every deploy location the plugin playbook's repo facts list.
 
 **Also append your result to the running batch digest**, so a human checking on a long batch
 mid-run doesn't have to wait for the whole batch to finish or dig through individual loop-logs:
