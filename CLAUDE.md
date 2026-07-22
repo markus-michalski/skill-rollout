@@ -44,8 +44,10 @@ a contributor must not break.
   with CR/control characters. Enforced by `.gitattributes`.
 - **Windows compatibility is a from-scratch requirement.** OS-agnostic
   `bin/run-server` wrapper, `encoding="utf-8"` on every file I/O, `py -3`
-  interpreter fallback in skills. See the project-type knowledge
-  (`knowledge/claude-plugin.md`, "Windows Compatibility") in mm-dev-toolkit.
+  interpreter fallback in skills. This plugin's own `bin/run-server(.cmd)`,
+  `.gitattributes`, and `tests/smoke/test_cross_platform.py` are the reference
+  implementation of the pattern — copy from here for a new plugin, not the
+  other way around.
 - **No manual version bump.** Leave `version` in `plugin.json` + the CHANGELOG
   header to the release process; edit `[Unreleased]` only.
 

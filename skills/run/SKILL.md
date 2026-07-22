@@ -15,10 +15,9 @@ argument-hint: "{plugin} {count} [max_duration]"
 # Skill Rollout — run
 
 Unattended, sequential, single-batch runner for the self-improvement-loop process (born out of the
-storyforge rollout, generalized for any Claude plugin). Full design rationale, risks, and the
-"why one batch, no auto-chaining" decision live in `reference/plugin-rollout-automation-concept.md`
-inside this plugin — read it once per session if anything below is unclear rather than guessing at
-intent.
+storyforge rollout, generalized for any Claude plugin). The one-batch-no-auto-chaining design is
+deliberate: after a batch stops, the operator reviews and merges the resulting PRs/issues before the
+next batch is manually invoked — see Step 4 below for how that boundary is enforced.
 
 **This skill is a thin entry point.** All real logic lives in the Workflow script that ships inside
 this plugin at `workflows/skill-rollout.js`. This file only resolves arguments, launches that
