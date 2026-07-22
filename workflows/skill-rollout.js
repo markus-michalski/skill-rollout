@@ -269,12 +269,41 @@ forever on a skill that will never have a live tier.
 
 ## git-workflow — autonomous mode
 
-Every git-workflow checkpoint (code-review + breaking-change, test, commit-message, branch/push, PR
-creation) is pre-approved — do not stop to ask. Any code-review finding, at ANY severity
-(critical/high/medium/low), gets fixed without asking, same as every checkpoint. Use the PR-creation
-mechanism the plugin playbook's repo facts specify (gh api workaround if a PreToolUse hook blocks
-\`gh pr create\`, otherwise gh pr create directly — never guess which applies, it's documented per
-plugin).
+This mirrors \`git-pr-workflows:git-workflow\`'s own Phase 1 code-review gate, minus its interactive
+checkpoints (this whole batch is pre-approved to run unattended) — it does NOT mean "skip the
+review", it means "run the same review, don't stop to ask about it". Do these steps IN ORDER,
+before any commit:
+
+1. **Actually invoke a real code-reviewer subagent — do not self-assess.** Use the Task/Agent tool
+   with \`subagent_type: "git-pr-workflows:code-reviewer"\` to review your own uncommitted changes.
+   \`git diff HEAD\` alone (not bare \`git diff\`, which misses anything already staged with
+   \`git add\`) STILL misses brand-new untracked files — this skill's own rollout routinely creates
+   new files (fixtures, eval docs). Run \`git add -A && git diff HEAD\` first (or pair \`git diff HEAD\`
+   with \`git status --porcelain\` and paste any new files' full content into the reviewer's context),
+   so a new file isn't reviewed blind — that would be the same bug in miniature, just for file
+   creation instead of code review itself. Passing this off as something you'll "keep in mind" while writing, instead of a
+   separate tool call after the edits exist, is exactly the failure this step guards against — a
+   prior batch's agents never made this call at all, and their PRs went out with zero real review
+   behind them (journal-verified: no code-reviewer invocation, no review artifact).
+2. **Fix every finding the review returns, at ANY severity (critical/high/medium/low), before
+   committing — EXCEPT the categories listed under "Stop-and-flag conditions" below (security/
+   credential/data-loss risk).** Those get flagged in \`needsHumanReview\`, same as always, never
+   silently self-fixed-and-pushed — an unattended agent applying its own fix to a credential leak
+   and shipping it is worse than surfacing it. Every other finding: do not ask, do not defer to a
+   follow-up — this checkpoint is pre-approved, not skipped.
+3. **Re-run the \`git-pr-workflows:code-reviewer\` subagent once** after applying fixes, to confirm the
+   findings from step 2 are actually gone (not just that you believe you fixed them). If THIS re-review surfaces
+   NEW findings that step 2 never saw (introduced by your own fixes) — fix those too before moving
+   on, same rule as step 2. Do not loop indefinitely; one fix-and-re-review pass is sufficient — this
+   means any fix you apply IN RESPONSE to this second pass ships without a third confirmation pass.
+   Add a one-line \`needsHumanReview\` note naming which finding(s) got a second-round fix that was
+   never itself re-reviewed, so a human knows exactly which lines carry that residual, bounded risk.
+   The separate "note in \`needsHumanReview\` instead of chasing further" allowance applies ONLY to
+   low-severity items surfaced by THIS re-review pass, never to anything step 2 already found —
+   nothing from the first pass gets quietly downgraded to "chose not to chase".
+4. Only then: commit, push, and open the PR. Use the PR-creation mechanism the plugin playbook's
+   repo facts specify (gh api workaround if a PreToolUse hook blocks \`gh pr create\`, otherwise
+   gh pr create directly — never guess which applies, it's documented per plugin).
 
 **Hard, non-negotiable limit unaffected by any of the above: never self-approve or self-merge a PR.**
 Leave every PR open for human review, regardless of how autonomous everything upstream of it was.
