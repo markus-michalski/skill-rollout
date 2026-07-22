@@ -213,7 +213,7 @@ doesn't exist yet.** Follow the plugin playbook's Prompt 1 exactly.
 **Prompt 2 (simulated loop) — only if the Simulated column for this skill isn't already ✅.** Follow
 the plugin playbook's Prompt 2 exactly, with these autonomous-mode additions:
 
-- Every grading pass MUST use adversarial-realistic instructions (schema.md) — no exceptions, even
+- Every grading pass MUST use adversarial-realistic instructions (${evalSchemaPath}) — no exceptions, even
   under time pressure. A suspiciously perfect first-baseline score is not something to celebrate,
   it's something to double check the grading methodology on before trusting it.
 - **Eval-design-candidate assertions** (same specific assertion fails 2 targeted-fix attempts):
@@ -264,7 +264,7 @@ side effects with an independent post-run check.
 If this skill's SKILL.md genuinely has no MCP domain-tool calls at all (a different case from the
 gate above — this is "no live tier needed", not "blocked"): do NOT leave the Live column ⬜. Grep it
 yourself to confirm, then mark it 🟦 N/A in STATUS.md with a one-line note of what you checked (per
-schema.md's convention) — this is required, not optional, so a future batch selection doesn't wait
+${evalSchemaPath}'s convention) — this is required, not optional, so a future batch selection doesn't wait
 forever on a skill that will never have a live tier.
 
 ## git-workflow — autonomous mode
@@ -339,7 +339,14 @@ const batchNotes = [] // cross-cutting notes (path/slug problems, onboarding iss
 // silently substituted with a guessed path.
 const referenceDir = parsedArgs.referenceDir || null
 if (!referenceDir) {
-  batchNotes.push('referenceDir was not passed by the caller — expected from a current run skill invocation. Falling back to skillEvalsDir/schema.md and a placeholder onboarding-playbook path, which likely does not exist; onboarding a new plugin will probably fail until this is fixed at the call site.')
+  batchNotes.push([
+    'referenceDir was not passed by the caller — expected from a current run skill invocation.',
+    'This degrades EVERY skill in this batch, not just onboarding: evalSchemaPath falls back to',
+    'skillEvalsDir/schema.md, a path that no longer exists (the plugin\'s eval schema now ships',
+    'only at referenceDir/eval-schema.md), so every skill\'s "source of truth" grading-methodology',
+    'reference will point at a dead file. The onboarding-playbook fallback path is equally dead.',
+    'Fix the run skill invocation to pass referenceDir rather than proceeding on this fallback.',
+  ].join(' '))
 }
 const evalSchemaPath = referenceDir ? `${referenceDir}/eval-schema.md` : `${skillEvalsDir}/schema.md`
 const onboardPlaybookPath = referenceDir
@@ -370,7 +377,7 @@ plugin has never been onboarded — set onboardingNeeded=true and return an empt
 (onboarding happens in the next phase, before any skill selection makes sense).
 
 If it exists: read it. **Before selecting anything, cross-check STATUS.md's row list against the
-actual current skill directory listing** — per schema.md §6, a plugin/repo can gain a brand-new
+actual current skill directory listing** — per ${evalSchemaPath} §6, a plugin/repo can gain a brand-new
 skill directory mid-rollout (e.g. as a side effect of another skill's own live-tier fix, like
 storyforge's \`delete-author\` appearing because \`create-author\`'s live tier found a missing MCP
 tool and the fix added a whole new skill alongside it). Two possible directory layouts — detect
@@ -393,7 +400,7 @@ to match. Do this even if it means this batch's actual work now includes a newly
 weren't expecting.
 
 A skill counts as fully done only if Simulated is ✅ AND Live is either ✅ or a verified 🟦 N/A (per
-schema.md's convention — never treat plain ⬜ as done). Return the first ${count} skills, in the
+${evalSchemaPath}'s convention — never treat plain ⬜ as done). Return the first ${count} skills, in the
 table's current row order (this is the plugin's own dependency/pipeline order, not alphabetical —
 do not re-sort it), that are not yet fully done. A skill with Simulated ✅ but Live ⬜ counts as
 not-done and should be included (to finish its live tier), not skipped in favor of a fresh skill.
@@ -425,11 +432,15 @@ if (selection.onboardingNeeded) {
   const onboardResult = await agent(
     `Run the onboarding meta-prompt for plugin "${plugin}" at repo path ${pluginRepoPath}, exactly as
 documented in ${onboardPlaybookPath}
-({PLUGIN_REPO_PATH} = ${pluginRepoPath}). Follow its Phase 1 (Investigate) / Phase 2 (Draft) / Phase 3
+({PLUGIN_REPO_PATH} = ${pluginRepoPath}, {skillEvalsDir} = ${skillEvalsDir}, {referenceDir} =
+${referenceDir || '(not provided — see the warning already logged for this run)'}). That document's
+own placeholders are ABSOLUTE paths on THIS machine, resolved above — they are NOT relative to
+${pluginRepoPath} (the target repo you are onboarding, which is a different repo than skill-rollout
+itself). Follow its Phase 1 (Investigate) / Phase 2 (Draft) / Phase 3
 (Self-check) exactly, including the "never guess" rule and the PreToolUse-hook check for
 \`gh pr create\`. This creates ${skillEvalsDir}/${plugin}/self-improving-skill-${plugin}.md
 and ${skillEvalsDir}/${plugin}/STATUS.md (mirroring storyforge/STATUS.md's format and the
-N/A/NEEDS-HUMAN-REVIEW conventions in schema.md). If anything cannot be confirmed with certainty,
+N/A/NEEDS-HUMAN-REVIEW conventions in ${evalSchemaPath}). If anything cannot be confirmed with certainty,
 list it in needsHumanReview instead of guessing — never guess. But set ok=false ONLY when the
 unconfirmed item actually gates a safe rollout (e.g. you could not determine the repo layout, the
 MCP-server facts, or the PR-creation mechanism / whether a PreToolUse hook blocks \`gh pr create\`).

@@ -166,6 +166,6 @@ CLAUDE.md/routing-table — the new skill is very likely adjacent to whatever sk
 `delete-author` landed right next to `create-author` in storyforge's own routing table), not appended
 at the end out of laziness. Note in the row why/when it appeared and which other skill's rollout
 produced it, so the connection isn't lost. Update the plugin's total skill count in STATUS.md's
-footer line too — this is exactly the kind of stale count schema.md's own header note already
-flags as a recurring, easy-to-forget mistake (storyforge's total was wrongly stuck at 49 for a
+footer line too — this is exactly the kind of stale count that's a recurring, easy-to-forget mistake
+(storyforge's total was wrongly stuck at 49 for a
 while for the same reason: nobody re-counted after the file was first built).
