@@ -24,3 +24,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - Nothing yet
+
+[Unreleased]: https://github.com/markus-michalski/skill-rollout/compare/95d74f1...HEAD
