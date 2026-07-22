@@ -19,7 +19,7 @@ CONFIG_FILE = CONFIG_ROOT / "config.yaml"
 # Fallbacks used when no config.yaml exists (Markus' main-PC paths). Documented
 # in config/config.example.yaml — copy it to CONFIG_FILE to override per machine.
 DEFAULT_DOCS_BASE = (
-    "~/SeaDrive/Meine Bibliotheken/002-Development/Claude_Code/docs/self_improving_skill"
+    "~/SeaDrive/Meine Bibliotheken/002-Development/Claude_Code/docs/self_improving_skill"  # noqa: E501
 )
 DEFAULT_SKILL_EVALS = "~/projekte/skill-evals"
 
@@ -40,11 +40,20 @@ def _abs_posix(path_str: str) -> str:
 
 
 def load_config() -> dict[str, Any]:
-    """Load user config from ~/.skill-rollout/config.yaml (empty dict if absent)."""
+    """Load user config from ~/.skill-rollout/config.yaml.
+
+    Tolerant by contract: a missing or malformed config falls back to an empty
+    dict (→ documented defaults in resolve_config) rather than throwing and
+    taking down every downstream tool.
+    """
     if not CONFIG_FILE.exists():
         return {}
-    with CONFIG_FILE.open(encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with CONFIG_FILE.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except (yaml.YAMLError, OSError):
+        return {}
+    return data or {}
 
 
 def resolve_config() -> dict[str, str]:
