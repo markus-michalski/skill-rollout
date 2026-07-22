@@ -169,6 +169,29 @@ each playbook's facts are specific to its own repo.
      MCP-Server — Live-Tier entfällt, nur Prompt 1+2 gelten.").
   2. MCP server exists AND the domain is confirmed disposable/fictional (storyforge's own
      precedent) → generate Prompt 3 in full, same shape as the template.
+
+     **Hard constraint on Prompt 3's execution step — do not write "spawn a subagent" (issue #15):**
+     Prompt 3 will be executed by an agent running inside the skill-rollout Workflow's own
+     `agent()` call (see `workflows/skill-rollout.js`'s per-skill rollout prompt) — a context where
+     the Task/Agent tool is unavailable, so that agent cannot itself spawn a further subagent. This
+     is the same harness constraint already documented throughout `workflows/skill-rollout.js` for
+     `EnterWorktree` (e.g. its "unavailable from this workflow-subagent context on this harness"
+     comments) — Prompt 3's live-tier step hits the identical wall for agent-spawning instead of
+     cwd-override. It was confirmed the hard way: storyforge's first-generated Prompt 3 said "spawn
+     a subagent with real MCP tool access," and every real rollout run silently substituted direct
+     execution instead (evidenced in per-skill `loop-log.md` NEEDS-HUMAN-REVIEW entries, e.g.
+     `world-builder/loop-log.md` and `character-creator-memoir/loop-log.md`), because the tool
+     genuinely was not there.
+
+     Do NOT write a "spawn a subagent" instruction into a newly generated Prompt 3 — it is a
+     reasonable-sounding isolation design (clean tool-call-log isolation, no context bleed from the
+     eval-grading agent's own state) but cannot be implemented via nested agent-spawning from this
+     execution context, no matter how natural it feels while drafting. Instead, the live-case
+     execution step must say: the current agent calls the real MCP tools itself directly
+     (discovering them via ToolSearch if not pre-loaded), outputs a TOOL CALL LOG (tool name + exact
+     parameters + result) as evidence, and for any claimed side effect, performs an independent
+     Read/tool call afterward proving it actually happened — same evidentiary rigor as the subagent
+     design intended, just executed directly instead of delegated.
   3. MCP server exists AND the domain is real-world data (the default unless positively ruled
      out) → do **NOT** generate a ready-to-run Prompt 3. Write a blocked placeholder instead:
      state plainly that this plugin's live-tier sandbox strategy has not been designed yet because
