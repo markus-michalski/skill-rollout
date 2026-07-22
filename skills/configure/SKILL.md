@@ -25,8 +25,9 @@ config file exists yet and the neutral defaults are being used — say so.
 ### 2. Ask What to Change
 
 Use AskUserQuestion for the two paths:
-- **self_improving_docs** — where the self-improving-skill docs + per-plugin
-  playbooks (`self-improving-skill-*.md`) live on this machine.
+- **self_improving_docs** — where per-plugin playbooks (`self-improving-skill-{plugin}.md`,
+  one per target plugin rolled out) live on this machine. The generic docs (schema,
+  onboarding meta-prompt) ship inside this plugin, not here.
 - **skill_evals** — where per-plugin eval state (`STATUS.md`, `loop-log.md`,
   `batch-digest.md`) lives (default `~/projekte/skill-evals`).
 
