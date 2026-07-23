@@ -11,16 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Changed
-- `workflows/skill-rollout.js`: restructure the per-skill rollout from one monolithic `agent()` call
-  into three sibling pipeline stages — Stage A (eval + edit, stages changes but does not commit),
-  Stage B (independent `git-pr-workflows:code-reviewer` review of the staged diff via the Workflow
-  tool's `agentType` option), Stage C (applies non-security findings, commits, pushes, opens the PR,
-  and does the loop-log/STATUS.md/batch-digest bookkeeping). Supersedes the manual self-review
-  procedure introduced by the issue #12 fix above with a real independent reviewer, now that the
-  review runs as a top-level sibling `agent()` call instead of a nested spawn from inside another
-  agent (issue #13). Stage C always runs, even when Stage A stopped early or made no changes, so the
-  bookkeeping write is never silently skipped; only Stage B is conditional on there being a diff to
-  review.
+- Nothing yet
 
 ### Deprecated
 - Nothing yet
@@ -29,11 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- `workflows/skill-rollout.js`: remove broken "Use Task/Agent tool to spawn code-reviewer subagent" instruction — the Task/Agent tool is unavailable from within a workflow `agent()` call (same harness constraint as `EnterWorktree`). Replace with a rigorous manual self-review procedure covering logic/correctness, SKILL.md structural compliance, eval design quality, data hygiene, and cross-file consistency; limitation recorded per-skill in `needsHumanReview` as `issue #12`. JS-level comment added documenting the constraint and the correct Option 2 path if harness ever lifts it.
-- `reference/prompt-self-improving-skill-playbook.md`: prohibit generating a Prompt 3 (live-MCP tier) that instructs spawning a subagent for MCP tool execution — the Task/Agent tool is unavailable inside the skill-rollout Workflow's per-skill agent context (same constraint as `EnterWorktree`), confirmed via repeated silent substitution in real rollout runs (issue #15). New guidance mandates direct MCP tool execution with a TOOL CALL LOG and independent post-write verification instead.
+- Nothing yet
 
 ### Security
 - Nothing yet
+
+## [1.0.1] - 2026-07-23
+
+### Added
+- restructure per-skill rollout as sibling pipeline stages (#17)
+
+### Fixed
+- prohibit subagent-spawn in generated live-tier Prompt 3 (#15) (#16)
+- replace unavailable Task/Agent reviewer with manual review criteria (#12) (#14)
+- write loop-log.md per iteration during Prompt 2, not only at skill-end (#11)
 
 ## [1.0.0] - 2026-07-22
 
@@ -55,3 +55,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - remove private-doc dependency, make onboarding self-contained (#6)
 
 [1.0.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.0.0
+[1.0.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.0.1
