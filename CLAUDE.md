@@ -50,6 +50,14 @@ a contributor must not break.
   other way around.
 - **No manual version bump.** Leave `version` in `plugin.json` + the CHANGELOG
   header to the release process; edit `[Unreleased]` only.
+- **Per-skill review expects `git-pr-workflows` enabled (soft dependency).** The
+  Rollout phase's review stage spawns an independent reviewer via
+  `agentType: 'git-pr-workflows:code-reviewer'` on a top-level `agent()` call in
+  `workflows/skill-rollout.js`. If that plugin is disabled/unavailable and the
+  call throws, the pipeline degrades gracefully to an in-prompt manual
+  self-review before committing (see `commitPrompt`'s `reviewFailed` branch) —
+  it never silently commits an unreviewed diff. Still, enable `git-pr-workflows`
+  for full review quality on a rollout batch.
 
 ## Layout
 
