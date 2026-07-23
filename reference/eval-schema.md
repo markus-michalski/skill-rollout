@@ -184,3 +184,63 @@ produced it, so the connection isn't lost. Update the plugin's total skill count
 footer line too — this is exactly the kind of stale count that's a recurring, easy-to-forget mistake
 (storyforge's total was wrongly stuck at 49 for a
 while for the same reason: nobody re-counted after the file was first built).
+
+## 7. Commit / PR / Issue conventions for target-repo work
+
+Every commit, PR, and GitHub issue this rollout creates **inside a target plugin repo** (not
+skill-rollout's own repo, not skill-evals — those have their own separate conventions) follows
+this fixed format, regardless of that target repo's own pre-existing conventions. Consistency
+across every plugin this rollout ever touches matters more than matching whatever a given repo
+happened to do before onboarding — a human scanning PRs/issues across ten different plugin repos
+should see one shape, not ten.
+
+**Why this section exists:** before it was written down, rollout-generated PR titles drifted
+across five different shapes in the same repo (`fix(scope): ...`, `skills(scope): ...`, a bare
+`scope: ...`, `plugin: prose summary`) and issue titles across four (`skill: description`,
+`bug: ...`, `refactor: ...`, no prefix at all) — confirmed by sampling storyforge's actual PR/issue
+history. Nothing enforced a shape; each agent picked whatever felt natural for that one skill.
+That makes filtering/grepping rollout output across repos impossible. This is the single source of
+truth going forward — `workflows/skill-rollout.js`'s Stage C (commit+PR) and Stage A
+(residual-issue-filing), plus the standalone-mode example prompt in `self-improving-skills.md`,
+all point here instead of re-describing the format inline.
+
+**Commit message & PR title** — Conventional Commits, scoped to the skill, not the plugin:
+
+```
+<type>(<skill-name>): <subject>
+```
+
+- `type`: `fix` for eval-driven bug fixes — the default, since most rollout work is closing a
+  failing assertion. `feat` only if the change adds real new capability beyond what an eval was
+  checking for. `refactor`/`docs` only if that is genuinely the dominant nature of the whole diff.
+  Never `skills(...)` (not a Conventional Commits type) and never a bare plugin-name prefix.
+- `<skill-name>`: the exact skill folder name — never the plugin name. You are already inside that
+  plugin's own repo; scoping to the skill is what makes several rollout PRs in the same repo
+  distinguishable at a glance.
+- `<subject>`: imperative mood, no trailing period, keep the whole `type(scope): subject` line at
+  or under 72 characters where reasonably possible — long explanation belongs in the commit/PR
+  body, not squeezed into the title.
+- The PR title is **identical** to the commit's subject line — do not draft a separate, differently
+  worded PR title. The PR body carries the detail (eval scores, findings addressed, etc.), same as
+  today.
+
+**Issue titles** (residual-note issues filed via `gh issue create`, see eval-and-edit's residual
+notes rule):
+
+```
+<skill-name>: <description>
+```
+
+- No `fix:`/`feat:`/`bug:`/`refactor:` prefix — these are lightweight residual notes, not versioned
+  commits, and a type prefix here has caused exactly the drift this section exists to stop.
+- `<description>` should be specific enough to grep for later — name the actual field, function, or
+  behavior involved, not "bug in X" or "cleanup needed".
+
+**Exception — work that isn't scoped to one skill.** Two known cases exist where a target-repo PR
+is not about a single skill's own files, so the `<skill-name>` scope above doesn't fit verbatim:
+onboarding (`workflows/skill-rollout.js`'s Onboard phase touches STATUS.md/the playbook file, not
+one skill) uses `chore(rollout-onboarding): subject`; a live-tier test surfacing a real MCP-server
+production bug (`self-improving-skills.md`'s "Nebenbefund" section) uses `fix(mcp): subject`. Same
+Conventional Commits type rules, different, explicitly-named scope — still consistently
+distinguishable from a per-skill PR at a glance. Do not invent a third ad-hoc scope for a case not
+listed here without adding it here first.

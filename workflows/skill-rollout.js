@@ -401,6 +401,10 @@ the plugin playbook's Prompt 2 exactly, with these autonomous-mode additions:
   ${pluginRepoPath}'s repo IMMEDIATELY (\`gh issue create\`), never just mention it in prose. This
   applies in the simulated tier too, not only the live tier — a real example: a book-conceptualizer
   run found two stale skill-name references this way and they'd have been lost if not filed.
+  **Issue title format is fixed, not your call:** \`${skillName}: <description>\` — no
+  fix/feat/bug/refactor prefix, see ${evalSchemaPath} §7 for the full convention and why it exists
+  (past runs drifted across four different title shapes in the same repo before this was written
+  down).
 - **Incremental progress logging** — after every full grade-fix-regrade cycle (one iteration of
   the improvement loop): immediately append a timestamped entry (real time via \`date\`, same as the
   batch digest) to \`${skillEvalsDir}/${pluginName}/${skillName}/loop-log.md\` documenting what you
@@ -580,7 +584,7 @@ next stage cannot fix. If the diff is empty, trivial, or genuinely clean, return
 this stage; a subsequent stage applies fixes and commits.`
 }
 
-function commitPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, worktreePath, editResult, reviewResult, reviewFailed) {
+function commitPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, worktreePath, editResult, reviewResult, reviewFailed, evalSchemaPath) {
   const findings = Array.isArray(reviewResult && reviewResult.findings) ? reviewResult.findings : []
   const nonSecurityFindings = findings.filter((f) => !f.isSecurityRisk)
   const securityFindings = findings.filter((f) => f.isSecurityRisk)
@@ -669,7 +673,12 @@ ${findingsIntro}
 3. \`git add -A\` again (your fixes may have touched files or added new ones), then \`git commit\`,
    push, and open the PR. Use the PR-creation mechanism the plugin playbook's repo facts specify
    (gh api workaround if a PreToolUse hook blocks \`gh pr create\`, otherwise \`gh pr create\` directly
-   — never guess which applies, it's documented per plugin).
+   — never guess which applies, it's documented per plugin). **Commit message and PR title format is
+   fixed, not your call:** \`type(${skillName}): subject\` — type is \`fix\` for the default
+   eval-driven case, \`feat\`/\`refactor\`/\`docs\` only if genuinely dominant, never \`skills(...)\` and
+   never a bare plugin-name prefix. The PR title must be IDENTICAL to the commit subject line — see
+   ${evalSchemaPath} §7 for the full convention and why it exists (past runs drifted across five
+   different PR-title shapes in the same repo before this was written down).
 
 **Hard, non-negotiable limit: never self-approve or self-merge a PR.** Leave every PR open for human
 review, regardless of how autonomous everything upstream was.`
@@ -690,7 +699,8 @@ wipe this skill's uncommitted work otherwise — leaving nothing for a human to 
 
 1. Do NOT run the review-findings-apply steps above — there are no findings, because no review ran.
 2. \`git add -A\` (in case anything changed since Stage A staged), then \`git commit\`, push, and open
-   the PR exactly as in the normal flow.
+   the PR exactly as in the normal flow — same fixed \`type(${skillName}): subject\` commit/PR-title
+   format as above, see ${evalSchemaPath} §7.
 3. **Mandatory:** add a \`needsHumanReview\` entry stating, verbatim in substance, "this PR was
    committed WITHOUT independent review — Stage A stopped early after staging changes, see
    stopReason above — review this diff with extra scrutiny before merging." This must be prominent,
@@ -923,7 +933,13 @@ the per-skill rollout prompt: entering late means what you already read/edited n
 the worktree). Do all such work inside the worktree, then \`ExitWorktree({action: "keep"})\` if any
 commits were made, \`({action: "remove"})\` otherwise — same concurrency-isolation requirement as the
 per-skill rollout prompt, same reason (real past collisions in this shared working directory, not
-hypothetical).`}`,
+hypothetical).`}
+
+If this onboarding phase does commit/PR directly in ${pluginRepoPath}: this is the one target-repo
+PR path that is NOT skill-scoped (onboarding touches STATUS.md/the playbook file, not a single
+skill's own files), so ${evalSchemaPath} §7's \`type(skill-name): subject\` shape doesn't apply
+verbatim — use \`chore(rollout-onboarding): subject\` instead (same Conventional Commits type rules,
+different scope) so it's still consistently distinguishable from a per-skill PR at a glance.`,
     { schema: ONBOARD_SCHEMA, phase: 'Onboard' }
   )
   batchNotes.push(`Onboarding: ${onboardResult.summary}`)
@@ -1023,7 +1039,7 @@ for (const skill of skillsToProcess) {
   let result
   try {
     result = await agent(
-      commitPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, editResult.worktreePath, editResult, reviewResult, reviewFailed),
+      commitPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, editResult.worktreePath, editResult, reviewResult, reviewFailed, evalSchemaPath),
       { label: `commit:${skill.name}`, phase: 'Rollout', schema: SKILL_RESULT_SCHEMA }
     )
   } catch (err) {
