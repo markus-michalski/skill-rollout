@@ -4,7 +4,7 @@ export const meta = {
   phases: [
     { title: 'Select', detail: 'read STATUS.md, pick the next skills not yet fully done, in table order' },
     { title: 'Onboard', detail: 'only if this plugin has never been onboarded before' },
-    { title: 'Rollout', detail: 'process each selected skill fully, one at a time, never in parallel' },
+    { title: 'Rollout', detail: 'process each selected skill fully, one at a time, never in parallel — eval+edit, then independent review, then commit+PR' },
     { title: 'Digest', detail: 'synthesize one batch-wide summary' },
   ],
 }
@@ -32,8 +32,7 @@ export const meta = {
 // session checking out branches or committing in that exact same shared checkout — moved HEAD out
 // from under a running skill, overwrote another session's .git-workflow/ state file. Sequential
 // skill-to-skill processing does NOT protect against this (it's about a DIFFERENT process, not
-// another skill in this batch). Fixed by instructing each git-touching agent prompt
-// (skillRolloutPrompt below, and the Onboard prompt if it commits to pluginRepoPath) to call the
+// another skill in this batch). Fixed by instructing each git-touching agent prompt to call the
 // EnterWorktree/ExitWorktree tools around its own git-workflow steps — each session gets its own
 // HEAD/index/working-tree files, so two sessions can no longer step on each other's git state.
 //
@@ -47,6 +46,34 @@ export const meta = {
 // skill-rollout SKILL.md's Step 1 — not from an untrusted external source — but they still get
 // validated below (slug format, real directory) before being interpolated into agent prompts that
 // go on to run real shell/git/gh commands, as defense in depth rather than trusting the caller.
+//
+// PER-SKILL PIPELINE (issue #13 — supersedes the single-agent self-review design from issue #12):
+// each skill now runs as up to THREE sibling agent() calls instead of one monolithic call, so code
+// review becomes a real independent reviewer instead of the skill's own agent self-approving its
+// own diff:
+//   Stage A (evalAndEditPrompt): runs Prompt 1/2/3, stages changes (`git add -A`), does NOT commit.
+//   Stage B (reviewPrompt):      independent `git-pr-workflows:code-reviewer` agent reviews the
+//                                 staged diff cold — no context on why the edits were made. Skipped
+//                                 if Stage A made no changes or stopped early (nothing to review).
+//   Stage C (commitPrompt):      applies Stage B's non-security findings, commits, pushes, opens the
+//                                 PR, and does the loop-log/STATUS.md/batch-digest bookkeeping. Runs
+//                                 for EVERY skill, including early-exits — the bookkeeping write must
+//                                 not be skipped just because there was nothing to commit.
+// This is a deliberate deviation from issue #13's literal pseudocode (which `continue`s straight to
+// a `convertToSkillResult` helper on early-exit, skipping the final agent call entirely): the
+// pre-#13 monolithic prompt always reached its "Before you finish" bookkeeping section even for a
+// stopped-early skill, and skipping Stage C entirely on early-exit would silently drop that write —
+// a regression, not a simplification. Stage C is therefore always invoked; only Stage B is
+// conditional on there being something to review.
+//
+// agentType on Stage B's agent() call is a Workflow-tool-documented, top-level fan-out mechanism —
+// NOT the same thing issue #12 hit. #12 failed because a subagent already running inside an agent()
+// call tried to spawn ANOTHER agent via Task/Agent (nested spawning, blocked by the Workflow
+// boundary). Stage B's agentType call is a sibling agent() call at the SAME level as every other
+// call in this script (Select/Onboard/Digest) — no nesting involved. Documented as supported; still
+// verify empirically with a real 1-skill batch before trusting it in an unattended overnight run —
+// if it turns out not to work in this harness either, do NOT resurrect in-prompt "use Task/Agent"
+// text (that's the exact thing #12 already proved broken); fall back to the old self-review design.
 
 const SELECTION_SCHEMA = {
   type: 'object',
@@ -77,6 +104,52 @@ const ONBOARD_SCHEMA = {
     summary: { type: 'string' },
   },
   required: ['ok', 'summary'],
+}
+
+// Stage A result — evals + SKILL.md edits, staged but NOT committed (issue #13).
+const EDIT_RESULT_SCHEMA = {
+  type: 'object',
+  properties: {
+    skill: { type: 'string' },
+    hasChanges: { type: 'boolean', description: 'true if `git add -A` staged any diff (tracked or new untracked files) for this skill in pluginRepoPath (or the resumed worktree). false if nothing changed or the stage stopped before touching pluginRepoPath at all.' },
+    stoppedEarly: { type: 'boolean' },
+    stopReason: { type: 'string' },
+    evalScores: {
+      type: 'object',
+      properties: {
+        simulatedScore: { type: 'string' },
+        liveScore: { type: 'string', description: '"N/A" if no MCP surface, else pass/total, empty string if not attempted' },
+      },
+    },
+    needsHumanReview: { type: 'array', items: { type: 'string' } },
+    issuesFiled: { type: 'array', items: { type: 'string' } },
+    worktreePath: { type: 'string', description: 'Only set when non-preIsolated AND EnterWorktree was actually called: the absolute path of the worktree this skill\'s changes are staged in (e.g. via `git rev-parse --show-toplevel` right after entering). Stage B/C must resume THIS SAME worktree via EnterWorktree({path}) rather than creating a new one or operating on the original pluginRepoPath directly. Leave empty when preIsolated (all stages share pluginRepoPath directly, no EnterWorktree involved) or when isolation failed/was skipped.' },
+    summary: { type: 'string' },
+  },
+  required: ['skill', 'hasChanges', 'summary'],
+}
+
+// Stage B result — independent review of Stage A's staged, uncommitted diff (issue #13).
+const REVIEW_RESULT_SCHEMA = {
+  type: 'object',
+  properties: {
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+          file: { type: 'string' },
+          line: { type: 'number' },
+          description: { type: 'string' },
+          isSecurityRisk: { type: 'boolean', description: 'true if this is a security/credential/data-loss risk. Stage C must NOT auto-fix these — they get flagged to needsHumanReview instead, same as the stop-and-flag convention everywhere else in this pipeline.' },
+        },
+        required: ['severity', 'description'],
+      },
+    },
+    summary: { type: 'string' },
+  },
+  required: ['findings', 'summary'],
 }
 
 const SKILL_RESULT_SCHEMA = {
@@ -113,43 +186,53 @@ function isValidPluginSlug(name) {
   return typeof name === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(name)
 }
 
-function skillRolloutPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, evalSchemaPath) {
-  const isolationSection = preIsolated
-    ? `## Concurrency isolation — already provided; do NOT call EnterWorktree
+// Isolation preamble shared by all three stages. `role` is 'create' for Stage A (first to touch
+// pluginRepoPath — creates the worktree in non-preIsolated mode) or 'resume' for Stage B/C (must
+// re-enter the EXACT worktree Stage A created, identified by `worktreePath`, never a fresh one).
+function isolationSection(pluginRepoPath, skillName, skillEvalsDir, preIsolated, role, worktreePath) {
+  if (preIsolated) {
+    return `## Concurrency isolation — already provided; do NOT call EnterWorktree
 
 You are running against a DEDICATED, single-use git worktree checkout at ${pluginRepoPath}, created
-by the operator specifically for this batch and used by no other session. Isolation is therefore
-already guaranteed by the path you were given. Do NOT call \`EnterWorktree\` — it is unavailable from
-this workflow-subagent context on this harness anyway, and calling it and then blocking on failure
-is exactly the failure this mode exists to avoid.
+by the operator specifically for this batch and used by no other session, and shared by all three
+pipeline stages of this skill. Isolation is therefore already guaranteed by the path you were given.
+Do NOT call \`EnterWorktree\` — it is unavailable from this workflow-subagent context on this harness
+anyway, and calling it and then blocking on failure is exactly the failure this mode exists to avoid.
 
-Do this BEFORE reading, editing, or committing anything:
-1. \`cd "${pluginRepoPath}"\` — this IS your isolated worktree; everywhere below, ${pluginRepoPath}
-   means this checkout.
-2. **Safety assertion — do this before ANY git mutation.** Confirm ${pluginRepoPath} really is a
-   linked worktree and not a primary checkout: a launcher mistake could otherwise point this at the
-   operator's main checkout, and the branch reset below would then hijack it. Run
-   \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` — in a linked worktree they
-   DIFFER (equivalently, \`.git\` here is a file, not a directory). If they are the SAME, this is a
-   primary checkout, NOT an isolated worktree: do NOT run any state-mutating git command, add a
-   \`needsHumanReview\` entry saying "preIsolated set but ${pluginRepoPath} is a primary checkout, not
-   a worktree — git-workflow skipped to avoid hijacking it", and skip this skill's git-workflow
-   (still report its evals/grading normally).
-3. Start this skill from a PRISTINE base branched off the remote default branch, so sequential skills
-   sharing this one worktree never inherit each other's edits or leftovers (a prior skill may have
-   stopped mid-edit — the operator's main checkout holds the default branch, and git forbids checking
-   out the same branch in two worktrees, so branch off the REMOTE ref, do NOT \`git checkout main\`):
-   \`git fetch origin && git checkout -f -B skill-eval-${skillName} origin/main && git clean -fd\`
-   (resolve the real default branch with \`git symbolic-ref --short refs/remotes/origin/HEAD\` if it
-   is not \`main\`; \`git clean -fd\` is safe here — the eval state lives OUTSIDE this worktree). Then
-   commit, push, and open the PR from this \`skill-eval-${skillName}\` branch — do NOT spawn a
-   separate branch-creating git-workflow on top of it; run the git-workflow steps (review → test →
-   commit → push → PR) directly on it.
-4. Do ALL reads, edits, evals, and git-workflow steps directly in this worktree. There is NO
-   ExitWorktree to call — the operator owns this worktree's lifecycle.
-5. Never touch any other worktree or the operator's main checkout; stay entirely inside
-   ${pluginRepoPath}.`
-    : `## Concurrency isolation — mandatory, do this FIRST, before anything else in this prompt
+\`cd "${pluginRepoPath}"\` — this IS your isolated worktree; everywhere below, ${pluginRepoPath} means
+this checkout.${role === 'create' ? `
+
+**Safety assertion — do this before ANY git mutation.** Confirm ${pluginRepoPath} really is a linked
+worktree and not a primary checkout: a launcher mistake could otherwise point this at the operator's
+main checkout, and the branch reset below would then hijack it. Run \`git rev-parse --git-dir\` and
+\`git rev-parse --git-common-dir\` — in a linked worktree they DIFFER (equivalently, \`.git\` here is a
+file, not a directory). If they are the SAME, this is a primary checkout, NOT an isolated worktree:
+do NOT run any state-mutating git command, add a \`needsHumanReview\` entry saying "preIsolated set
+but ${pluginRepoPath} is a primary checkout, not a worktree — git-workflow skipped to avoid hijacking
+it", and skip this skill's git-workflow (still report its evals/grading normally).
+
+Start this skill from a PRISTINE base branched off the remote default branch, so sequential skills
+sharing this one worktree never inherit each other's edits or leftovers (a prior skill may have
+stopped mid-edit — the operator's main checkout holds the default branch, and git forbids checking
+out the same branch in two worktrees, so branch off the REMOTE ref, do NOT \`git checkout main\`):
+\`git fetch origin && git checkout -f -B skill-eval-${skillName} origin/main && git clean -fd\`
+(resolve the real default branch with \`git symbolic-ref --short refs/remotes/origin/HEAD\` if it is
+not \`main\`; \`git clean -fd\` is safe here — the eval state lives OUTSIDE this worktree). Every
+subsequent stage for this skill (review, commit) runs directly on this \`skill-eval-${skillName}\`
+branch — do NOT create a separate branch on top of it.` : `
+
+This skill's changes are already staged here by the prior pipeline stage, on branch
+\`skill-eval-${skillName}\` — do NOT re-branch, re-fetch, or reset anything; just inspect/build on
+what is already staged.`}
+
+Do ALL reads/edits/reviews/git-workflow steps directly in this worktree. There is NO ExitWorktree to
+call — the operator owns this worktree's lifecycle across all three stages of every skill in this
+batch. Never touch any other worktree or the operator's main checkout; stay entirely inside
+${pluginRepoPath}.`
+  }
+
+  if (role === 'create') {
+    return `## Concurrency isolation — mandatory, do this FIRST, before anything else in this prompt
 
 This exact working directory has been the site of real concurrent-session collisions during past
 unattended batches (documented in ${skillEvalsDir}/storyforge/bootstrap-book-from-series/sandbox.md
@@ -157,10 +240,10 @@ and two STATUS.md rows there): another process moved the shared HEAD out from un
 session, and a separate incident overwrote another session's own \`.git-workflow/\` state file. This
 is not a hypothetical risk — it has happened, more than once.
 
-Do this BEFORE reading any file, running any eval, or editing anything — not just before the
-git-workflow/commit step. Entering the worktree late (e.g. only right before committing) means
-whatever you already read/edited in the shared checkout never makes it into the worktree, and the
-commit ends up empty or wrong — isolation would silently fail to isolate anything.
+Do this BEFORE reading any file, running any eval, or editing anything — not just before staging.
+Entering the worktree late means whatever you already read/edited in the shared checkout never makes
+it into the worktree, and the staged diff ends up empty or wrong — isolation would silently fail to
+isolate anything.
 
 1. \`cd "${pluginRepoPath}"\` first. \`EnterWorktree\` isolates whatever repo your current working
    directory is inside — it does NOT take a repo path argument, so you must actually be in
@@ -169,27 +252,67 @@ commit ends up empty or wrong — isolation would silently fail to isolate anyth
 2. Call the \`EnterWorktree\` tool (no \`name\`/\`path\` needed — a fresh worktree is created and you're
    switched into it automatically).
 3. From this point on, ${pluginRepoPath} in every instruction below means the worktree you just
-   entered, not the original shared path — do ALL reads, edits, evals, and git-workflow steps
-   (review → test → commit → branch/push → PR) inside it. Nothing else about the process changes.
-4. When finished: keep the worktree (\`ExitWorktree\` with \`action: "keep"\`) if you made ANY commits,
-   regardless of whether PR creation itself succeeded — the branch must survive on disk either way
-   (for human PR review, or for whoever picks up a failed PR-creation attempt next). Only use
-   \`action: "remove"\` if you made zero commits (skill turned out already fully done) — nothing to
-   keep in that case.
+   entered, not the original shared path — do ALL reads, edits, and evals inside it.
+4. **Do NOT call ExitWorktree.** Unlike the old single-agent design, this stage does not finish the
+   skill's work — a review stage and a commit stage still need to operate in this exact worktree
+   after you're done. Calling ExitWorktree here would strand your staged changes in a worktree no
+   later stage can find. Instead: immediately after entering, capture the worktree's real absolute
+   path (\`git rev-parse --show-toplevel\`) and return it as \`worktreePath\` in your structured result
+   — that is the ONLY way the next stage knows which worktree to resume, since each stage is a fresh
+   agent with no memory of this one.
 5. If \`EnterWorktree\` fails or is unavailable for any reason, do NOT fall back to working directly
    in the shared checkout — add a \`needsHumanReview\` entry naming this a concurrency-isolation gap
-   for this skill's run, and stop before any git mutation (still report the rest of this skill's
-   tiers — evals, grading — normally; only the git-workflow portion is blocked by this).`
-  return `You are autonomously running the self-improvement rollout for ONE skill, as part of an
-unattended batch. No human will review anything until the whole batch finishes — act accordingly,
-but DO NOT guess at anything you can verify or that materially affects safety/correctness.
+   for this skill's run, leave \`worktreePath\` empty, set \`hasChanges: false\`, and stop before any
+   git mutation (still report the rest of this skill's tiers — evals, grading — normally; only the
+   git-workflow portion is blocked by this).
+6. Never touch any other worktree or the operator's main checkout; stay entirely inside the worktree
+   you just entered.`
+  }
+
+  // role === 'resume', non-preIsolated
+  return worktreePath
+    ? `## Concurrency isolation — resume the SAME worktree the prior stage created
+
+The prior stage isolated this skill's work in a dedicated worktree and left it open (deliberately did
+not call ExitWorktree) so this stage can pick up exactly where it left off. Do NOT call
+\`EnterWorktree\` with a \`name\` — that would create a brand-new, EMPTY worktree containing none of the
+prior stage's staged changes, which would make this stage silently operate on nothing.
+
+1. \`cd "${pluginRepoPath}"\` first (the operator's original repo — needed for EnterWorktree's own
+   repo-resolution, same as the create step).
+2. Call \`EnterWorktree\` with \`path: "${worktreePath}"\` to resume that exact worktree.
+3. From this point on, ${pluginRepoPath} in every instruction below means that resumed worktree.
+4. Never touch any other worktree or the operator's main checkout.
+5. **If this \`EnterWorktree({path: ...})\` call fails or is unavailable to you in this context:** do
+   NOT fall back to the shared, unisolated checkout — you would silently inspect the wrong tree (no
+   staged diff visible there) and could mistake that for "nothing to find". Stop here without
+   inspecting, editing, or committing anything. If you are the review stage: return an EMPTY findings
+   array with a summary that EXPLICITLY states the resume failed and no review actually happened —
+   never phrase this as "diff reviewed, found nothing clean", that would misrepresent a skipped
+   review as a completed one. If you are the commit stage: do NOT commit, add a \`needsHumanReview\`
+   entry naming this a concurrency-isolation gap, and treat this skill the same as "nothing to
+   commit" for your bookkeeping writes.`
+    : `## Concurrency isolation — nothing to resume
+
+The prior stage reported no \`worktreePath\` (isolation failed, was skipped, or nothing was staged).
+Do NOT call EnterWorktree yourself — there is nothing prepared for you to resume, and creating a
+fresh empty worktree here would just isolate you from the (nonexistent) staged diff. Treat this as
+"nothing to review/commit for this skill" and skip straight to the bookkeeping/reporting portion of
+this stage's instructions.`
+}
+
+function evalAndEditPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, evalSchemaPath) {
+  return `You are Stage A (eval + edit) of a 3-stage unattended pipeline for ONE skill, as part of an
+unattended batch. No human will review anything until an independent reviewer (Stage B, a separate
+agent) sees your diff — act accordingly, but DO NOT guess at anything you can verify or that
+materially affects safety/correctness.
 
 Plugin: ${pluginName} (repo: ${pluginRepoPath})
 Skill: ${skillName}
 
 (Note: the doc paths below may contain spaces — quote them in any shell command.)
 
-${isolationSection}
+${isolationSection(pluginRepoPath, skillName, skillEvalsDir, preIsolated, 'create', null)}
 
 ## Source of truth — read these first, in order, don't re-derive what they already document
 
@@ -219,7 +342,7 @@ the plugin playbook's Prompt 2 exactly, with these autonomous-mode additions:
 - **Eval-design-candidate assertions** (same specific assertion fails 2 targeted-fix attempts):
   classify before doing anything else. If it's narration-dependent (asks the transcript to
   "explicitly note/cite X") or provably conflicts with the skill's own stated output terseness —
-  fix the eval itself (remove/reframe), log why, commit. Otherwise (genuinely ambiguous, you can't
+  fix the eval itself (remove/reframe), log why, stage it. Otherwise (genuinely ambiguous, you can't
   self-certify which reading is right): do NOT touch the eval, do NOT keep chasing it. Mark it
   \`NEEDS-HUMAN-REVIEW\` in loop-log.md and in this skill's STATUS.md Notes cell. This does not stop
   your work on this skill — move on.
@@ -233,12 +356,8 @@ the plugin playbook's Prompt 2 exactly, with these autonomous-mode additions:
   the improvement loop): immediately append a timestamped entry (real time via \`date\`, same as the
   batch digest) to \`${skillEvalsDir}/${pluginName}/${skillName}/loop-log.md\` documenting what you
   fixed and what the updated score is, and update \`loop-state.json\` to reflect current iteration
-  state. Do NOT defer both writes to the "Before you finish" section — that section appends the
-  final loop-log.md entry plus STATUS.md and batch-digest.md; this step handles the per-iteration
-  entries that make a mid-run \`/skill-rollout:status\` check meaningful. A loop-log.md that stays
-  empty until the skill finishes defeats its own stated purpose: "a human checking on a long batch
-  mid-run doesn't have to wait for the whole batch to finish or dig through individual loop-logs"
-  (from the batch-digest.md instructions in the "Before you finish" section).
+  state. Do NOT defer both writes to the end of this stage — a mid-run \`/skill-rollout:status\` check
+  should be meaningful even while this skill is still being processed.
 
 **Prompt 3 (live-MCP tier) — only if ALL of: the plugin has a real MCP server (per the playbook's
 repo facts) AND this skill's SKILL.md actually calls domain MCP tools (grep it — don't assume from a
@@ -277,93 +396,256 @@ yourself to confirm, then mark it 🟦 N/A in STATUS.md with a one-line note of 
 ${evalSchemaPath}'s convention) — this is required, not optional, so a future batch selection doesn't wait
 forever on a skill that will never have a live tier.
 
-## git-workflow — autonomous mode
+## Stage boundary — stop here, do NOT commit
 
-This mirrors \`git-pr-workflows:git-workflow\`'s own Phase 1 code-review gate, minus its interactive
-checkpoints (this whole batch is pre-approved to run unattended) — it does NOT mean "skip the
-review", it means "run the same review, don't stop to ask about it". Do these steps IN ORDER,
-before any commit:
+This is Stage A of a 3-stage pipeline (eval+edit → independent review → commit+PR). An independent
+reviewer sees your diff next; you never commit, push, or open a PR yourself.
 
-1. **Perform a rigorous manual code-review pass — do not self-approve.**
-   Note: the Task/Agent tool (needed to spawn a code-reviewer subagent) is unavailable from this
-   workflow-subagent context — the same harness that makes \`EnterWorktree\` unavailable here also
-   prevents any nested agent-spawning (both fail at the Workflow tool boundary, not just cwd). This
-   is a documented constraint, not a step to skip. Record it once in the closing loop-log.md entry
-   as: "Review was manual self-review — code-reviewer subagent unavailable (issue #12)." Do NOT
-   add this to \`needsHumanReview\` — that channel is for genuine exception flags, not structural
-   constants; a per-skill boilerplate entry buries real flags.
-
-   Run the review as follows:
-   a. \`git add -A && git diff HEAD\` — not bare \`git diff\`, which misses untracked new files; this
-      rollout routinely creates new fixture and eval files. Also run \`git status --porcelain\` and
-      read any new untracked files in full — you cannot review what you have not read.
-   b. Review every changed chunk adversarially for each of these categories:
-      - **Logic/correctness**: off-by-one mistakes, wrong variable, broken edge case, incorrect
-        score arithmetic, assertion that would trivially pass even with a wrong implementation.
-      - **SKILL.md structural compliance**: required frontmatter fields present and non-empty, no
-        banned patterns (check the plugin's own CLAUDE.md ban-list), "Use when…" description is
-        trigger-rich and specific, model ID is a valid current-release Claude model string.
-      - **Eval design quality**: assertions test actual behavior, not transcript phrases; grading
-        is adversarial-realistic (not self-grading); no narration-dependent assertion that only
-        checks whether the skill "explicitly noted X" in its output.
-      - **Data hygiene**: no machine-specific paths, no sandbox-author names hardcoded where a
-        generic placeholder belongs, no credentials or API tokens even in comments.
-      - **Cross-file consistency**: do changes in one file contradict any other file edited in
-        this same run? (E.g. a SKILL.md step that references a tool the MCP server no longer exports.)
-   c. List every finding with severity (critical / high / medium / low) and the specific file +
-      line. Completeness matters: a finding you skip listing is a finding step 2 cannot fix.
-
-2. **Fix every finding from the review at ANY severity (critical/high/medium/low), before
-   committing — EXCEPT the categories listed under "Stop-and-flag conditions" below
-   (security/credential/data-loss risk).** Those get flagged in \`needsHumanReview\`, same as always,
-   never silently self-fixed-and-pushed — an unattended agent applying its own fix to a credential
-   leak and shipping it is worse than surfacing it. Every other finding: do not ask, do not defer to
-   a follow-up — this checkpoint is pre-approved, not skipped.
-
-3. **Re-read all files your fixes touched** — not the complete original diff, but every file
-   (not just every hunk) where you made a change — to confirm each step 2 change addresses the root
-   cause and has not introduced a cross-file inconsistency. If this targeted re-read surfaces NEW
-   findings introduced by your fixes, fix those too (same rule as step 2). One fix-and-re-read pass
-   is the limit — any fix you apply in response to this pass ships without a further confirmation
-   pass; add a one-line \`needsHumanReview\` note naming which finding(s) got a second-round fix that
-   was never itself re-reviewed. The "note and move on" allowance applies ONLY to low-severity items
-   surfaced by THIS re-review pass, never to anything step 2 already found — nothing from the first
-   pass gets quietly downgraded to "chose not to chase".
-
-4. Only then: commit, push, and open the PR. Use the PR-creation mechanism the plugin playbook's
-   repo facts specify (gh api workaround if a PreToolUse hook blocks \`gh pr create\`, otherwise
-   gh pr create directly — never guess which applies, it's documented per plugin).
-
-**Hard, non-negotiable limit unaffected by any of the above: never self-approve or self-merge a PR.**
-Leave every PR open for human review, regardless of how autonomous everything upstream of it was.
+1. If you made no file changes at all in ${pluginRepoPath} (skill turned out already fully done, or
+   you stopped early per a stop-and-flag condition below): set \`hasChanges: false\` and do NOT run
+   \`git add\`.
+2. Otherwise: \`git add -A\` (stage everything, including new untracked eval/fixture files) but do
+   **not** run \`git commit\`. The staged diff is exactly what Stage B will review — anything you
+   leave unstaged is invisible to it.
+3. Do NOT write the closing loop-log.md entry, STATUS.md's final state, or batch-digest.md yet —
+   those happen in Stage C, after the diff has actually been reviewed and (if needed) fixed, so they
+   reflect the true final state rather than a pre-review guess. The per-iteration loop-log entries
+   from Prompt 2 above still happen as normal — only the CLOSING entry is deferred.
 
 ## Stop-and-flag conditions (the only things that should make you NOT just proceed)
 
 Add an entry to \`needsHumanReview\` (do not guess, do not silently proceed) if you hit:
 - Ambiguity about whether a live-tier case, handled wrong, would touch real (non-sandbox) data.
-- A finding that looks like a security/credential/data-loss risk.
-- Any destructive git operation outside the sanctioned pattern (force-push, history rewrite).
+- Any destructive git operation outside the sanctioned pattern (force-push, history rewrite) —
+  this stage should never need one; if something seems to require it, stop and flag instead.
 - A finding that clearly belongs to a different, unrelated repo this rollout isn't authorized to
   touch (file the issue in the right repo if you can identify it; do not push there).
 
 Everything else (including NEEDS-HUMAN-REVIEW eval-design flags) does not block you — keep going.
 
-## Before you finish
+## Return value
 
-Append the final entry to ${skillEvalsDir}/${pluginName}/${skillName}/loop-log.md (per-iteration
-entries were already written during Prompt 2 — this is the closing entry), write the final
-loop-state.json, and update this skill's row in ${skillEvalsDir}/${pluginName}/STATUS.md. Sync
-any SKILL.md change to every deploy location the plugin playbook's repo facts list.
+Return the structured result: hasChanges, stoppedEarly/stopReason, evalScores (simulated/live),
+needsHumanReview, issuesFiled (filed during Prompt 2/3 residual-note handling), worktreePath (per
+the isolation section above — only set when non-preIsolated and you actually called EnterWorktree),
+and a short prose summary of what you did.`
+}
+
+function reviewPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, worktreePath) {
+  return `You are Stage B (independent review) of a 3-stage unattended pipeline for ONE skill. You did
+NOT write these changes and have no prior context on why they were made — review them on their own
+merits, the same way you would review a stranger's pull request. Nothing here should be taken on
+trust from whatever produced the diff.
+
+Plugin: ${pluginName} (repo: ${pluginRepoPath})
+Skill: ${skillName}
+
+${isolationSection(pluginRepoPath, skillName, skillEvalsDir, preIsolated, 'resume', worktreePath)}
+
+## What to review
+
+Inspect the staged diff — not bare \`git diff\`, which misses untracked new files (this rollout
+routinely creates new fixture and eval files):
+- \`git diff HEAD\` — staged + unstaged tracked changes.
+- \`git status --porcelain\` — catches new untracked files. Read each one in full; you cannot review
+  what you have not read.
+
+Review every changed chunk adversarially for each of these categories:
+- **Logic/correctness**: off-by-one mistakes, wrong variable, broken edge case, incorrect score
+  arithmetic, an assertion that would trivially pass even with a wrong implementation.
+- **SKILL.md structural compliance**: required frontmatter fields present and non-empty, no banned
+  patterns (check the plugin's own CLAUDE.md ban-list if it has one), "Use when…" description is
+  trigger-rich and specific, model ID is a valid current-release Claude model string.
+- **Eval design quality**: assertions test actual behavior, not transcript phrases; grading is
+  adversarial-realistic (never self-grading); no narration-dependent assertion that only checks
+  whether the skill "explicitly noted X" in its own output.
+- **Data hygiene**: no machine-specific paths, no sandbox-author names hardcoded where a generic
+  placeholder belongs, no credentials or API tokens even in comments.
+- **Cross-file consistency**: do changes in one file contradict any other changed file in this same
+  diff? (E.g. a SKILL.md step referencing a tool the MCP server no longer exports.)
+- **Security/credential/data-loss risk**: mark any such finding with \`isSecurityRisk: true\` — the
+  next stage must NOT auto-fix these, only flag them to a human.
+
+List every finding with severity (critical/high/medium/low), file, line (if applicable), and a
+concrete, specific description — completeness matters, a finding you skip listing is a finding the
+next stage cannot fix. If the diff is empty, trivial, or genuinely clean, return an empty
+\`findings\` array — do not invent findings just to appear thorough.
+
+**Do NOT edit any files. Do NOT run \`git add\`, \`git reset\`, or \`git commit\`.** You are read-only in
+this stage; a subsequent stage applies fixes and commits.`
+}
+
+function commitPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, worktreePath, editResult, reviewResult, reviewFailed) {
+  const findings = Array.isArray(reviewResult && reviewResult.findings) ? reviewResult.findings : []
+  const nonSecurityFindings = findings.filter((f) => !f.isSecurityRisk)
+  const securityFindings = findings.filter((f) => f.isSecurityRisk)
+
+  // Stage C is a FRESH agent with no memory of Stage A — its own evalScores/issuesFiled/
+  // needsHumanReview only exist in the editResult object here in JS. Without surfacing them
+  // explicitly, Stage C cannot write correct scores into STATUS.md/batch-digest.md (it was never
+  // told what they are), and the final Digest phase would silently under-report Stage A's flags.
+  // The loop ALSO merges these programmatically after Stage C returns (belt-and-suspenders — do not
+  // rely solely on the agent correctly echoing them back), but Stage C still needs the real values
+  // here to do its bookkeeping writes correctly in the first place.
+  const stageAResultsBlock = `Stage A's own results, for your bookkeeping writes below (loop-log/STATUS.md/batch-digest —
+these are NOT automatically visible to you otherwise, since you are a fresh agent):
+
+${JSON.stringify({
+  evalScores: editResult.evalScores,
+  issuesFiled: editResult.issuesFiled,
+  needsHumanReview: editResult.needsHumanReview,
+  stoppedEarly: editResult.stoppedEarly,
+  stopReason: editResult.stopReason,
+}, null, 2)}`
+
+  // reviewFailed: Stage B's agent() call itself threw (harness/transient error), as opposed to
+  // Stage B running successfully and finding nothing. In that case there is no independent review
+  // to apply — committing on an unreviewed diff would be WORSE than the old issue #12 manual
+  // self-review design, so this stage falls back to doing that same manual review itself rather
+  // than silently skipping review altogether.
+  const findingsIntro = reviewFailed
+    ? `**Stage B (the independent reviewer) failed to run for this skill** (its agent() call errored —
+see batch notes). There is no independent review to apply here. Do NOT commit on an unreviewed diff
+— instead, perform the SAME review yourself first, adversarially, using the identical criteria Stage
+B would have used:
+
+\`git diff HEAD\` (staged + unstaged tracked changes) and \`git status --porcelain\` (new untracked
+files — read each one in full; you cannot review what you have not read). Review every changed chunk
+for: **Logic/correctness**, **SKILL.md structural compliance**, **Eval design quality**, **Data
+hygiene**, **Cross-file consistency**, and any **security/credential/data-loss risk** (list these
+separately — do NOT self-fix them, they go to \`needsHumanReview\` same as step 1 below). Build your
+own findings list from this pass, then treat it exactly like Stage B's findings for steps 1-3 below.
+Also add a \`needsHumanReview\` note stating "Stage B (independent review) failed for this skill —
+commit proceeded on manual self-review only", so a human knows this skill's review was degraded from
+the normal pipeline.`
+    : `Stage B (an independent reviewer with no context on why these changes were made) reviewed this
+skill's staged diff and returned:
+
+${JSON.stringify({ findings: nonSecurityFindings, summary: reviewResult && reviewResult.summary }, null, 2)}
+${securityFindings.length
+  ? `
+
+It also flagged ${securityFindings.length} finding(s) as security/credential/data-loss risk — these
+are listed below and must NOT be touched by you; add them to \`needsHumanReview\` verbatim instead:
+
+${JSON.stringify(securityFindings, null, 2)}`
+  : ''}`
+
+  // Three-way branch, NOT two — hasChanges/stoppedEarly are independent booleans, and Stage B's own
+  // gate (see the rollout loop) is `hasChanges && !stoppedEarly`. A naive `hasChanges` gate here
+  // would diverge from Stage B's gate and let a `hasChanges: true, stoppedEarly: true` result
+  // (Stage A partially edited/staged something, THEN hit a stop-and-flag condition) commit a diff
+  // that was never independently reviewed — silently defeating the entire point of this pipeline.
+  // Committing that partial diff anyway (rather than leaving it, which would be wiped by the NEXT
+  // skill's fresh branch reset in preIsolated mode — same shared worktree) is still the right call,
+  // but it must be committed AS-IS, unreviewed, with a loud human-facing flag — never silently
+  // treated as if Stage B had cleared it.
+  const applySection = editResult.hasChanges && !editResult.stoppedEarly
+    ? `## Apply the review's findings, then commit
+
+${stageAResultsBlock}
+
+${findingsIntro}
+
+1. **Fix every non-security finding above, at ANY severity (critical/high/medium/low), before
+   committing.** Do not ask, do not defer to a follow-up — this checkpoint is pre-approved, not
+   skipped. If you disagree with a finding, still address it (fix, or at minimum add a one-line
+   \`needsHumanReview\` note explaining why you judged it a false positive) rather than silently
+   dropping it — a dropped finding is indistinguishable from a missed one to anyone reading the
+   result later.
+2. **Re-read every file your fixes touched** (not just the hunks — the whole file) to confirm each
+   fix addresses the root cause and has not introduced a cross-file inconsistency. If this targeted
+   re-read surfaces NEW findings introduced by your own fixes, fix those too (same rule as step 1).
+   One fix-and-re-read pass is the limit — any fix applied in response to this pass ships without a
+   further confirmation pass; add a one-line \`needsHumanReview\` note naming which finding(s) got a
+   second-round fix that was never itself re-reviewed. This "note and move on" allowance applies
+   ONLY to items surfaced by THIS re-review pass, never to anything Stage B already found — nothing
+   from Stage B's review gets quietly downgraded to "chose not to chase".
+3. \`git add -A\` again (your fixes may have touched files or added new ones), then \`git commit\`,
+   push, and open the PR. Use the PR-creation mechanism the plugin playbook's repo facts specify
+   (gh api workaround if a PreToolUse hook blocks \`gh pr create\`, otherwise \`gh pr create\` directly
+   — never guess which applies, it's documented per plugin).
+
+**Hard, non-negotiable limit: never self-approve or self-merge a PR.** Leave every PR open for human
+review, regardless of how autonomous everything upstream was.`
+    : (editResult.hasChanges
+      ? `## Staged, but Stage A stopped early — commit AS-IS, unreviewed, and flag it loudly
+
+${stageAResultsBlock}
+
+Stage A staged real changes (\`hasChanges: true\`) but then hit a stop-and-flag condition
+(\`stopReason: ${editResult.stopReason || '(none given)'}\`) — Stage B was DELIBERATELY SKIPPED for
+this skill (its gate is \`hasChanges && !stoppedEarly\`, same as this one), so this diff has NEVER
+been independently reviewed. Do NOT treat it as reviewed-and-clean.
+
+Committing anyway (rather than leaving it staged-but-uncommitted) is still correct here: in
+preIsolated mode this worktree is shared across every skill in the batch, and the NEXT skill's
+branch reset (\`git checkout -f -B skill-eval-{next} origin/main && git clean -fd\`) would silently
+wipe this skill's uncommitted work otherwise — leaving nothing for a human to even find.
+
+1. Do NOT run the review-findings-apply steps above — there are no findings, because no review ran.
+2. \`git add -A\` (in case anything changed since Stage A staged), then \`git commit\`, push, and open
+   the PR exactly as in the normal flow.
+3. **Mandatory:** add a \`needsHumanReview\` entry stating, verbatim in substance, "this PR was
+   committed WITHOUT independent review — Stage A stopped early after staging changes, see
+   stopReason above — review this diff with extra scrutiny before merging." This must be prominent,
+   not buried among Stage A's other flags.
+
+**Hard, non-negotiable limit: never self-approve or self-merge a PR.** Leave every PR open for human
+review, regardless of how autonomous everything upstream was.`
+      : `## Nothing was staged — no commit needed
+
+${stageAResultsBlock}
+
+Stage A reported \`hasChanges: false\`. There is nothing to review or commit for this skill in this
+run. Do not run any git mutation. Skip straight to the bookkeeping section below, carrying forward
+Stage A's stoppedEarly/stopReason/needsHumanReview as-is into your own return value.`)
+
+  const exitSection = preIsolated
+    ? '' // preIsolated: the operator owns worktree lifecycle across the whole batch — nothing to exit here.
+    : (editResult.hasChanges && worktreePath
+        ? `\n\n## Before returning: release the worktree
+
+You resumed this worktree via EnterWorktree above. Now that this skill's pipeline is finished:
+- If you made a commit above: \`ExitWorktree({action: "keep"})\` — the branch must survive on disk for
+  human PR review, or for whoever picks up a failed PR-creation attempt next.
+- If you made zero commits (stopped before committing): \`ExitWorktree({action: "remove"})\` —
+  nothing worth keeping.`
+        : '')
+
+  return `You are Stage C (apply review + commit + bookkeeping) of a 3-stage unattended pipeline for ONE
+skill, the final stage. No human will review anything until the PR you open here — act accordingly,
+but never skip the "never self-approve" limit below no matter how routine this skill's changes look.
+
+Plugin: ${pluginName} (repo: ${pluginRepoPath})
+Skill: ${skillName}
+
+${editResult.hasChanges ? isolationSection(pluginRepoPath, skillName, skillEvalsDir, preIsolated, 'resume', worktreePath) : '(No worktree/isolation steps needed — Stage A staged nothing, see below.)'}
+
+${applySection}
+${exitSection}
+
+## Bookkeeping — do this regardless of whether anything was committed above
+
+Append the closing entry to ${skillEvalsDir}/${pluginName}/${skillName}/loop-log.md (per-iteration
+entries were already written by Stage A during Prompt 2 — this is the closing entry, and should
+reflect the actually-reviewed, actually-committed final state, including the PR URL if one was
+opened), write the final loop-state.json, and update this skill's row in
+${skillEvalsDir}/${pluginName}/STATUS.md. Sync any SKILL.md change to every deploy location the
+plugin playbook's repo facts list.
 
 **Also append your result to the running batch digest**, so a human checking on a long batch
 mid-run doesn't have to wait for the whole batch to finish or dig through individual loop-logs:
 append (do not overwrite, do not remove anything already there — same append-only convention as
-loop-log.md) a new section to ${skillEvalsDir}/${pluginName}/batch-digest.md with this
-skill's name, simulated/live scores, PR URLs, issues filed, and any needsHumanReview entries — a
-few lines, not a full report. Create the file with a one-line header if it doesn't exist yet.
+loop-log.md) a new section to ${skillEvalsDir}/${pluginName}/batch-digest.md with this skill's name,
+simulated/live scores, PR URLs, issues filed, and any needsHumanReview entries — a few lines, not a
+full report. Create the file with a one-line header if it doesn't exist yet.
 
-Return the structured result: scores, PR URLs (open, not merged), issues filed, any
-needsHumanReview entries, and a short prose summary.`
+Return the structured result: scores (carry forward Stage A's evalScores), PR URLs (open, not
+merged — empty array if nothing was staged), issues filed (Stage A's issuesFiled, plus any you filed
+yourself), needsHumanReview (Stage A's entries + Stage B's security findings + any of your own),
+stoppedEarly/stopReason (carry forward from Stage A if nothing was staged), and a short prose
+summary of the whole skill's pipeline run — not just this stage.`
 }
 
 phase('Select')
@@ -417,20 +699,6 @@ const onboardPlaybookPath = referenceDir
 // EnterWorktree is unavailable (the cwd override is refused from a workflow-subagent context). The
 // operator owns the worktree's lifecycle. Defaults to false (agents self-isolate via EnterWorktree).
 const preIsolated = parsedArgs.preIsolated === true
-// code-reviewer subagent limitation (issue #12): the Task/Agent tool is unavailable from within a
-// workflow agent() call, so per-skill agents cannot spawn a nested code-reviewer subagent. The
-// mechanism differs from EnterWorktree's failure (EnterWorktree refuses the cwd override; this is
-// the Workflow boundary blocking any outbound agent-spawn from inside an agent() call), but both
-// result in unavailability from this context. The per-skill prompt therefore mandates a rigorous
-// manual self-review (see skillRolloutPrompt's "## git-workflow — autonomous mode", step 1).
-// The limitation is noted once per skill in loop-log.md (not in needsHumanReview — that channel
-// is for genuine exception flags, not structural constants).
-// If the harness ever lifts this constraint (nested agent-spawning becomes available from within
-// a workflow agent()), the correct fix is Option 2 from issue #12: restructure as sibling pipeline
-// stages in this script, with agentType: 'git-pr-workflows:code-reviewer' on the review stage —
-// but note the ordering constraint: the write stage must stop short of committing and leave changes
-// unstaged for the review stage to inspect before commit. Do NOT restore "Use Task/Agent tool" in
-// the prompt without first verifying the tool is actually present in the subagent's tool surface.
 
 if (!isValidPluginSlug(plugin)) {
   return {
@@ -588,22 +856,85 @@ for (const skill of skillsToProcess) {
   const doneNote = skill.simulatedDone && !skill.liveDone ? ' (live tier only — simulated already done)' : ''
   log(`Starting ${skill.name} (${positionLabel})${doneNote}...`)
 
+  // Stage A — eval + edit, stage changes but do not commit.
+  let editResult
+  try {
+    editResult = await agent(evalAndEditPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, evalSchemaPath), {
+      label: `eval:${skill.name}`,
+      phase: 'Rollout',
+      schema: EDIT_RESULT_SCHEMA,
+    })
+  } catch (err) {
+    editResult = {
+      skill: skill.name,
+      hasChanges: false,
+      stoppedEarly: true,
+      stopReason: 'agent_error',
+      summary: `Stage A (eval+edit) agent call threw and was caught: ${err && err.message ? err.message : String(err)}`,
+      needsHumanReview: [`${skill.name}: Stage A agent call failed, see batch log — this skill's own state files may be partially updated, check before assuming it's untouched.`],
+    }
+  }
+
+  // Stage B — independent review, only if there is something staged to review.
+  // editResult.worktreePath is Stage A's own `git rev-parse --show-toplevel` output (non-preIsolated
+  // mode only), interpolated into Stage B/C's EnterWorktree({path}) instruction below. Deliberately
+  // not further validated here: it comes from a trusted agent's own git output, not raw user input,
+  // and isolationSection's own EnterWorktree-failure fallback (added for code review finding M1)
+  // already covers the case where it points at something EnterWorktree rejects.
+  let reviewResult = { findings: [], summary: 'Skipped — Stage A reported no changes or stopped early, nothing to review.' }
+  let reviewFailed = false
+  if (editResult.hasChanges && !editResult.stoppedEarly) {
+    try {
+      reviewResult = await agent(reviewPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, editResult.worktreePath), {
+        label: `review:${skill.name}`,
+        agentType: 'git-pr-workflows:code-reviewer',
+        phase: 'Rollout',
+        schema: REVIEW_RESULT_SCHEMA,
+      })
+    } catch (err) {
+      reviewFailed = true
+      reviewResult = {
+        findings: [],
+        summary: `Stage B (review) agent call threw and was caught: ${err && err.message ? err.message : String(err)}. Stage C will fall back to its own manual review for this skill — flagged below.`,
+      }
+      batchNotes.push(`${skill.name}: Stage B (independent review) failed — Stage C fell back to a manual self-review before committing. See loop-log for detail.`)
+    }
+  }
+
+  // Stage C — apply review findings (if any), commit + push + PR, bookkeeping. Always runs, even
+  // on a Stage A early-exit, so the loop-log/STATUS.md/batch-digest bookkeeping is never skipped.
   let result
   try {
-    result = await agent(skillRolloutPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, evalSchemaPath), {
-      label: `rollout:${skill.name}`,
-      phase: 'Rollout',
-      schema: SKILL_RESULT_SCHEMA,
-    })
+    result = await agent(
+      commitPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, editResult.worktreePath, editResult, reviewResult, reviewFailed),
+      { label: `commit:${skill.name}`, phase: 'Rollout', schema: SKILL_RESULT_SCHEMA }
+    )
   } catch (err) {
     result = {
       skill: skill.name,
-      summary: `Agent call threw and was caught: ${err && err.message ? err.message : String(err)}`,
+      summary: `Stage C (commit) agent call threw and was caught: ${err && err.message ? err.message : String(err)}`,
       stoppedEarly: true,
       stopReason: 'agent_error',
-      needsHumanReview: [`${skill.name}: agent call failed, see batch log — this skill's own state files may be partially updated, check before assuming it's untouched.`],
+      needsHumanReview: [`${skill.name}: Stage C agent call failed after Stage A staged changes — check ${pluginRepoPath} for an uncommitted/unreviewed diff before starting the next skill.`],
     }
   }
+
+  // Belt-and-suspenders merge (code review finding H2): commitPrompt's stageAResultsBlock already
+  // gives Stage C the data to echo back itself, but do NOT rely solely on a fresh agent correctly
+  // carrying every field forward — merge programmatically so Stage A's needsHumanReview/issuesFiled
+  // survive into the final Digest even if Stage C's own echo is incomplete. Concat rather than
+  // overwrite: both stages may have independently legitimate entries.
+  result.needsHumanReview = [
+    ...(Array.isArray(editResult.needsHumanReview) ? editResult.needsHumanReview : []),
+    ...(Array.isArray(result.needsHumanReview) ? result.needsHumanReview : []),
+  ]
+  result.issuesFiled = [
+    ...(Array.isArray(editResult.issuesFiled) ? editResult.issuesFiled : []),
+    ...(Array.isArray(result.issuesFiled) ? result.issuesFiled : []),
+  ]
+  if (!result.simulatedScore && editResult.evalScores) result.simulatedScore = editResult.evalScores.simulatedScore
+  if (!result.liveScore && editResult.evalScores) result.liveScore = editResult.evalScores.liveScore
+
   results.push(result)
   log(`${skill.name}: ${result.summary}`)
 
@@ -626,7 +957,7 @@ will read after this batch — be concrete, not generic):
 
 ${JSON.stringify(results, null, 2)}
 
-Batch-level notes (onboarding, path validation, circuit breaker): ${JSON.stringify(batchNotes)}
+Batch-level notes (onboarding, path validation, circuit breaker, Stage B failures): ${JSON.stringify(batchNotes)}
 
 Include: which skills were processed and their scores, every PR URL (all still open, awaiting
 review — say so explicitly), every GitHub issue filed, every needsHumanReview entry across all

@@ -11,7 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Changed
-- Nothing yet
+- `workflows/skill-rollout.js`: restructure the per-skill rollout from one monolithic `agent()` call
+  into three sibling pipeline stages — Stage A (eval + edit, stages changes but does not commit),
+  Stage B (independent `git-pr-workflows:code-reviewer` review of the staged diff via the Workflow
+  tool's `agentType` option), Stage C (applies non-security findings, commits, pushes, opens the PR,
+  and does the loop-log/STATUS.md/batch-digest bookkeeping). Supersedes the manual self-review
+  procedure introduced by the issue #12 fix above with a real independent reviewer, now that the
+  review runs as a top-level sibling `agent()` call instead of a nested spawn from inside another
+  agent (issue #13). Stage C always runs, even when Stage A stopped early or made no changes, so the
+  bookkeeping write is never silently skipped; only Stage B is conditional on there being a diff to
+  review.
 
 ### Deprecated
 - Nothing yet
