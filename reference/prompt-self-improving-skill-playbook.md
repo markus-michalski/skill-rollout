@@ -181,6 +181,25 @@ each playbook's facts are specific to its own repo.
   uncommitted work sitting in the shared tree — wait and retry, NEVER stash/checkout/reset to "clean
   up", that destroys the other session's work) from a genuine content conflict (stop, flag,
   `needsHumanReview`); (4) never `git push --force`, under any of the above conditions.
+
+  **Second hard requirement on Prompt 2 specifically — do not lose this to paraphrasing (issue
+  #22):** the generated Prompt 2 text runs as Stage A of the skill-rollout batch pipeline, whose
+  own boundary rule forbids committing the target plugin repo's diff at all — staging happens once,
+  at the very end of Stage A, and Stage C commits once after independent review. "Same shape as the
+  example" is not enough for the per-iteration keep/discard mechanics either — copy the standalone-
+  vs-pipeline-mode keep split and the content-capture-restore discard mechanics from
+  `{referenceDir}/self-improving-skills.md`'s "Beispielprompt für Skill Self-Improvement" verbatim in
+  substance, not just paraphrased. In short (again, the source has the full reasoning — two
+  independent production runs already hit this exact gap and each had to improvise its own
+  workaround before it was fixed here, do not let a fresh onboarding regenerate the same gap):
+  (1) capture the file's exact content via a plain Read immediately before EVERY iteration's edit,
+  starting with iteration 1; (2) on "keep", do NOT git-commit into the target plugin repo — leave
+  the edit applied uncommitted, record `"commit": null` plus an explanatory `"note"` in
+  loop-state.json (this is the correct, expected shape, not an anomaly); (3) on "discard", restore
+  the file to the content captured in step 1 via Edit/Write — NEVER `git checkout`/`git reset` for
+  this, since Stage A never commits per iteration, so HEAD stays at the pre-loop baseline and a
+  git-based revert after any earlier kept iteration would silently destroy that kept edit too, not
+  just the current one.
 - **Prompt 3** (Live-MCP-Tier): three possible outcomes, per step 3/3a's findings — do not blur
   them together:
   1. No MCP server at all → short explicit note instead of a prompt ("Dieses Plugin hat keinen

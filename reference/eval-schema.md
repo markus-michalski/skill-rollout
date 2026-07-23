@@ -91,10 +91,18 @@ Report simulated-tier and live-tier pass rates **separately**. Never average the
 }
 ```
 
+The example above is a **standalone run** (real commit hashes on every "keep"). Running as Stage A
+of the skill-rollout batch pipeline instead (issue #22 — see `self-improving-skills.md`'s "Beispielprompt
+für Skill Self-Improvement" for the full rule) looks different: Stage A never commits, so every
+"keep" entry has `"commit": null` plus a one-line `"note"`, e.g.
+`{"iteration": 1, "label": "keep", "score": 0.975, "pass": 39, "total": 40, "commit": null, "note":
+"staged, not committed — Stage A boundary forbids commits, kept via applied edit, committed once in
+Stage C after review"}` — this is the CORRECT, expected shape in pipeline mode, not an anomaly to fix.
+
 **Fields:**
 - `iteration` — the last iteration number run (0 = baseline).
 - `best_score` / `best_score_pass_total` — the best pass rate reached so far and its raw `[pass, total]`.
-- `best_score_history` — one entry per iteration, in order: `label` is `"baseline"`, `"keep"`, or `"discard"`; `commit` only present on `"keep"` entries; `source` is optional free text for entries that didn't come from the loop's own propose-a-fix step (e.g. a PR-review-driven fix applied and re-scored afterward, same as `backfill-promises`'/`backfill-style-principles`'s code-review-hardening commits).
+- `best_score_history` — one entry per iteration, in order: `label` is `"baseline"`, `"keep"`, or `"discard"`; `commit` present (a real hash) on `"keep"` entries for a standalone run, `null` (with an explanatory `"note"`) on `"keep"` entries for a pipeline (Stage A) run — see above; `source` is optional free text for entries that didn't come from the loop's own propose-a-fix step (e.g. a PR-review-driven fix applied and re-scored afterward, same as `backfill-promises`'/`backfill-style-principles`'s code-review-hardening commits).
 - `consecutive_non_improvements` — current stall streak (0-2); the loop stops when this hits 2.
 - `assertion_streaks` — map of assertion id → consecutive-fail count, only for assertions currently mid-streak (empty object once nothing is streaking, e.g. after a perfect score). Feeds the same "flag as eval-design candidate after 2 failed targeted attempts" rule `loop-log.md` documents in prose.
 - `stopped` / `stop_reason` — whether the loop has stopped and why: `"perfect_score"`, `"stalled_2_consecutive"`, `"manual_interruption"`, or a specific variant like `"perfect_score_reconfirmed_after_code_review_cleanup"` when a post-loop review commit needed a re-score.

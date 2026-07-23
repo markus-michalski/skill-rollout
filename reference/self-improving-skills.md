@@ -42,15 +42,23 @@ Alles, was beim Transkript-Lesen auffällt, aber von keiner Assertion erfasst wi
 ### Beispielprompt für Skill Self-Improvement
 
 ```tex
-Use the skill-creator skill to run a self-improvement loop on my {Skill-Name/PATHTO Skill} skill. Use the test prompts and assertions in {PATHTO evals.json} to evaluate each iteration. For each cycle: run all test prompts through the skill, grade each assertion pass/fail, calculate the overall pass rate as a score. If any assertions fail, propose and make ONE change to the SKILL.md. Re-run all tests and recalculate. If the score improved, keep the change and git commit (scope the commit to only the skill's own files, not unrelated repo changes). If it dropped or stayed the same, git reset.
+Use the skill-creator skill to run a self-improvement loop on my {Skill-Name/PATHTO Skill} skill. Use the test prompts and assertions in {PATHTO evals.json} to evaluate each iteration. For each cycle: run all test prompts through the skill, grade each assertion pass/fail, calculate the overall pass rate as a score. If any assertions fail, propose and make ONE change to the SKILL.md.
+
+Before making that change, capture the file's exact current content (a plain Read, not a git operation) — this is what a later discard restores, so do this on EVERY iteration, not just ones you expect to fail.
+
+Re-run all tests and recalculate. If the score improved: keep the change.
+- Standalone run (this loop is NOT executing inside the skill-rollout batch pipeline's Stage A): git commit it now (scope the commit to only the skill's own files, not unrelated repo changes).
+- Pipeline run (this IS Stage A of the skill-rollout batch pipeline): do NOT commit — Stage A's own boundary rule forbids committing the plugin-repo diff here; leave the edit applied, uncommitted, in the working tree. The outer pipeline's Stage C commits once, after independent review, covering every kept iteration from this whole loop in one diff. Record `"commit": null` in loop-state.json for this iteration, with a one-line `"note"` explaining why (so a resumed/reviewing session doesn't mistake the absence of a hash for a discard) — this is the CORRECT, expected shape in pipeline mode, not an anomaly to fix.
+
+If it dropped or stayed the same: discard. Restore the file to the content captured just before this iteration's edit (via Edit/Write) — this content-based restore is correct and safe in BOTH modes (standalone and pipeline), always use it rather than a git-based revert. It matters most in pipeline mode: nothing may have been committed yet there, and a git-based revert (`git checkout`/`git reset`) would jump back to the pre-loop baseline, silently wiping out any EARLIER kept iteration's edit too, not just this iteration's — content-based restore works correctly regardless of how many keeps came before, in either mode.
 
 Not every failing assertion is a real skill bug — sometimes the assertion itself is too strict or ambiguous. So: track per-assertion failure history across iterations. If the same specific assertion fails 2 iterations in a row despite a targeted fix attempt each time, stop trying to fix it via SKILL.md changes — flag it in the log as a candidate eval-design issue instead (needs human review of the assertion, not more churn). If the overall score hasn't improved for 2 consecutive iterations, stop the loop entirely and report the final score plus which assertions are still failing, rather than continuing to iterate without my input.
 
 Log each iteration: number, score, keep or discard, what you tried. Do NOT stop to ask me. I may be asleep. Keep looping until I interrupt you, you hit a perfect score, or one of the stall conditions above triggers.
 
-Alongside the prose log, maintain a loop-state.json next to it, per the schema in this plugin's reference/eval-schema.md (iteration number, best score + pass/total, per-iteration history with keep/discard labels and commit hashes, stall streak, per-assertion fail streaks, stopped/stop_reason). Update it after every iteration, not just at the end — it's the quick-glance, machine-readable twin of the prose log, and lets a resumed/interrupted session pick up state without re-reading the whole thing.
+Alongside the prose log, maintain a loop-state.json next to it, per the schema in this plugin's reference/eval-schema.md (iteration number, best score + pass/total, per-iteration history with keep/discard labels and commit hashes — `null` + a `note` on "keep" entries in pipeline mode, per above — stall streak, per-assertion fail streaks, stopped/stop_reason). Update it after every iteration, not just at the end — it's the quick-glance, machine-readable twin of the prose log, and lets a resumed/interrupted session pick up state without re-reading the whole thing.
 
-Whenever loop-log.md or loop-state.json get committed inside skill-evals: use the scoped-add + safe-push-retry rule from "Git-Sicherheit für JEDEN Commit in skill-evals" above — never a blind `git add -A`/`.` from the skill-evals root, never a force-push.
+Whenever loop-log.md or loop-state.json get committed inside skill-evals: use the scoped-add + scoped-commit + safe-push-retry rule from "Git-Sicherheit für JEDEN Commit in skill-evals" above — never a blind `git add -A`/`.` or a plain `git commit` from the skill-evals root, never a force-push.
 ```
 
 ## Nach Abschluss

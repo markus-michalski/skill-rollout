@@ -20,7 +20,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- `reference/self-improving-skills.md`, `reference/eval-schema.md`, `reference/prompt-self-improving-
+  skill-playbook.md`: reconcile the "Beispielprompt für Skill Self-Improvement"'s per-iteration
+  `git commit`/`git reset` instruction with Stage A's no-commit boundary (`workflows/skill-rollout.js`,
+  from #13). Confirmed hitting production twice independently (`mm-skills/prompt-generator` and
+  `storyforge/backfill-style-principles` loop-logs) before this fix, each session re-deriving its
+  own workaround. The example prompt now explicitly distinguishes standalone runs (real `git
+  commit`/`git reset`, unchanged) from pipeline (Stage A) runs: "keep" leaves the edit applied
+  uncommitted (`"commit": null` + explanatory `"note"` in loop-state.json — documented as the
+  correct, expected shape, not an anomaly); "discard" restores content captured just before the
+  edit (a plain Read/Edit, never a git operation) rather than a git-based revert, which would be
+  unsafe once any earlier iteration in the same run was kept (Stage A never commits, so HEAD is
+  always the pre-loop baseline — a git-based discard after a keep would silently wipe the kept edit
+  too, not just the current iteration's). Not yet observed in production but a real,
+  waiting-to-happen bug this fix closes before it manifests. Also adds a "do not lose this to
+  paraphrasing" hard requirement to the onboarding meta-prompt template's Prompt 2 section (mirroring
+  issue #20's git-safety hard requirement), so a future onboarding can't silently regenerate a
+  playbook missing this reconciliation. The two already-onboarded plugins' generated playbooks
+  (`~/projekte/skill-evals/{mm-skills,storyforge}/self-improving-skill-*.md`) — the exact two files
+  that produced the production workarounds above — are backfilled with the same fix in a companion
+  change to the separate `skill-evals` repo, so this closes for real, not just for future
+  onboardings (issue #22).
 
 ### Security
 - Nothing yet
