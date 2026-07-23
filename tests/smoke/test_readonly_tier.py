@@ -161,8 +161,7 @@ def test_workflow_js_readonly_bypass_has_sensitive_data_carveout():
     explicitly NOT treat "read-only" as "safe to read anything real"."""
     text = _workflow_text()
     mutation_only = (
-        "this bypass addresses MUTATION risk only — it is not a "
-        "read-anything clearance"
+        "this bypass addresses MUTATION risk only — it is not a read-anything clearance"
     )
     assert mutation_only in text, (
         "expected an explicit statement that read-only clearance does not "
@@ -192,7 +191,7 @@ def test_workflow_js_status_column_uses_blocked_symbol_not_bare_square():
     looked at yet — the actually-used convention (confirmed in mm-skills'
     real STATUS.md) is 🟥 BLOCKED, matching eval-schema.md's own legend."""
     text = _workflow_text()
-    assert 'mark the Live column 🟥 BLOCKED' in text, (
+    assert "mark the Live column 🟥 BLOCKED" in text, (
         "expected the hard-gate outcome to explicitly mark 🟥 BLOCKED, not "
         "leave the column at a bare ⬜"
     )
