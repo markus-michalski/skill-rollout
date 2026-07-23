@@ -202,7 +202,7 @@ def test_self_improving_skills_doc_links_loop_state_writes_to_the_rule():
     """The loop-state.json/loop-log.md example prompt text must point back
     at the git-safety section, not leave readers to infer it applies."""
     text = _normalize(SELF_IMPROVING_SKILLS.read_text(encoding="utf-8"))
-    assert "use the scoped-add + safe-push-retry rule" in text, (
+    assert "use the scoped-add + scoped-commit + safe-push-retry rule" in text, (
         "expected the loop-state/loop-log section to explicitly reference "
         "the git-safety rule above it"
     )
