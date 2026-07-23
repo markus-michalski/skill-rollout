@@ -116,7 +116,9 @@ don't infer from any other plugin you may have worked on before)
    per-repo detection — it is already known and applies everywhere. The sanctioned workaround is the
    `gh api repos/{owner}/{repo}/pulls -f title=... -f body=... -f base=... -f head=...` call, used as
    the final step inside the `git-pr-workflows:git-workflow` skill (never before it, never as a
-   standalone bypass).
+   standalone bypass). **The commit message, PR title, and issue title format themselves are fixed
+   plugin-wide** (see {referenceDir}/eval-schema.md §7) — never invent or adapt a per-repo title
+   convention here, regardless of what style this specific target repo's own history happens to use.
 8. Check for CI (.github/workflows/) and a real test suite (tests/ directory) — find the actual
    invocation command from README/CONTRIBUTING/pyproject.toml/package.json.
 9. If an MCP server exists: check whether Claude Code loads it from a deployed copy distinct from
