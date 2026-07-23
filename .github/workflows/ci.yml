@@ -27,7 +27,7 @@ jobs:
         run: ruff format --check .
       - name: JSON validation
         run: |
-          python -m json.tool .claude-plugin/plugin.json > /dev/null
-          python -m json.tool .mcp.json > /dev/null
+          python -c "import json; json.load(open('.claude-plugin/plugin.json', encoding='utf-8'))"
+          python -c "import json; json.load(open('.mcp.json', encoding='utf-8'))"
       - name: Smoke tests
         run: pytest tests/smoke -q
