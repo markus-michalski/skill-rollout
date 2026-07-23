@@ -11,7 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Changed
-- Nothing yet
+- `skills/status/SKILL.md`: live-verify PR merge state via `gh pr view` before presenting a status
+  summary, instead of trusting STATUS.md/batch-digest.md's free-form prose (written once when a
+  skill's rollout stage finished, never revisited afterward). Confirmed in production against
+  storyforge (9 batch-digest PRs of unknown actual state) and mm-skills (several PRs reported open
+  that were long since merged). Presentation-time correction only — the skill's pre-existing
+  "strictly read-only" contract is unchanged, nothing is written back to either file. Explicitly
+  out of scope: NEEDS-HUMAN-REVIEW notes describing a structural harness limitation that a later
+  plugin version has since fixed — not GitHub-API-verifiable, left as an accurate historical record
+  (issue #18).
 
 ### Deprecated
 - Nothing yet
