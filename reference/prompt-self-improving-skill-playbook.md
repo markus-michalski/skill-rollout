@@ -83,6 +83,14 @@ don't infer from any other plugin you may have worked on before)
    **Default to "not yet designed" — do not guess a plugin into the safe bucket because its domain
    sounds fictional or low-stakes.** A plugin with no prior sandbox work has not earned the "safe"
    classification yet, no matter what it manages.
+3b. **Only if 3a's outcome was "Yes, already designed and documented":** check whether
+   {skillEvalsDir}/{plugin-name}/mcp-surface-register.md already exists. This is a separate,
+   continuously-maintained file — not part of this generated playbook — that every skill's later
+   Stage A rollout reads before running Prompt 3 and writes new findings into, so skill #2 never
+   re-derives what skill #1 already learned about this plugin's MCP surface (per-entity vs.
+   global-singleton tools, which sandbox fixture states already exist). If it doesn't exist yet,
+   Phase 2 below must create it with an empty table skeleton — do not defer this to the first
+   skill rollout, since the whole point is that it exists before any skill needs it.
 4. **Plugin-type repos:** confirm "skills" in plugin.json ships a directory verbatim to installers
    (true for essentially all Claude plugins). **Flat-collection repos:** confirm each skill directory
    is installed by copy or symlink per the repo's own CLAUDE.md/README (mm-skills documents this in
@@ -156,6 +164,11 @@ each playbook's facts are specific to its own repo.
   comes from that repo's real current directory contents, not assumed. For a flat-collection repo,
   every skill's Live column starts as 🟦 N/A (no MCP server exists for the whole repo, per step 3) —
   set that immediately rather than leaving it ⬜ for a live tier that will never apply.
+- **MCP Surface Register (only if step 3b found it missing):** create
+  {skillEvalsDir}/{plugin-name}/mcp-surface-register.md now, with the two empty table skeletons
+  (MCP Tool Scope; Fixture Inventory) per {referenceDir}/self-improving-skills.md's "MCP Surface
+  Register" section — do not pre-populate rows from a guess, leave it genuinely empty for the first
+  skill rollout to fill in from real findings.
 - **Prompt 1** (evals.json bauen, simulierter Tier): same shape as {referenceDir}/self-improving-skills.md's
   example, referencing the skill-rollout plugin's reference/eval-schema.md (this is the correct target
   location to write into the NEW playbook's text — never the {skillEvalsDir}/schema.md path, which
@@ -231,6 +244,14 @@ each playbook's facts are specific to its own repo.
      parameters + result) as evidence, and for any claimed side effect, performs an independent
      Read/tool call afterward proving it actually happened — same evidentiary rigor as the subagent
      design intended, just executed directly instead of delegated.
+
+     **Reference the MCP Surface Register (step 3b):** Prompt 3's text must instruct the executing
+     agent to read {skillEvalsDir}/{plugin-name}/mcp-surface-register.md before running any live
+     case, and to write back anything it newly learns (a tool's per-entity/global-singleton scope, a
+     fixture state it created) — see {referenceDir}/self-improving-skills.md's "MCP Surface Register"
+     section for the exact mechanics and the mandatory capture-before-write rule for any singleton
+     tool call. Do not inline that mechanics text again here; point at the source section so the two
+     copies cannot drift apart.
   3. MCP server exists AND the domain is real-world data (the default unless positively ruled
      out) → do **NOT** generate a ready-to-run Prompt 3. Write a blocked placeholder instead:
      state plainly that this plugin's live-tier sandbox strategy has not been designed yet because

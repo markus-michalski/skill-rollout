@@ -24,7 +24,7 @@ evals.json always lives externally, at ~/projekte/skill-evals/<plugin-or-repo-na
 
 `~/projekte/skill-evals` ist EIN geteiltes Git-Repo über alle Rollout-Ziel-Plugins hinweg (mm-skills, storyforge, ...) — anders als der Ziel-Plugin-Repo selbst, der pro Batch über `preIsolated`/`EnterWorktree` isoliert ist, hat skill-evals **keine** Isolation. Zwei Rollout-Sessions gegen unterschiedliche Plugins teilen sich dasselbe Arbeitsverzeichnis, denselben Index, denselben HEAD.
 
-Gilt für JEDEN Commit hier — evals.json, loop-log.md, loop-state.json, STATUS.md, batch-digest.md, self-improving-skill-{plugin}.md, alles. Die beiden Schritte gehören zusammen, nicht einzeln befolgen:
+Gilt für JEDEN Commit hier — evals.json, loop-log.md, loop-state.json, STATUS.md, batch-digest.md, self-improving-skill-{plugin}.md, mcp-surface-register.md, alles. Die beiden Schritte gehören zusammen, nicht einzeln befolgen:
 
 1. **Scoped Add UND Scoped Commit — Scoped Add allein reicht nicht.** `git add ~/projekte/skill-evals/{plugin-name}/` (oder noch spezifischer) — NIEMALS `git add -A`, NIEMALS blankes `git add .` vom skill-evals-Root aus. Aber: ein scoped Add kontrolliert nur, was DU staged — eine parallel laufende Session kann bereits eigene Dateien im selben, geteilten Index stehen haben, und ein normales `git commit` snapshotted den GESAMTEN Index, nicht nur die eigenen Pfade. Deshalb auch beim Commit scopen: `git commit -- ~/projekte/skill-evals/{plugin-name}/ -m "..."` (die `--`-Pathspec-Form committet NUR passende Pfade, unabhängig davon, was sonst noch gestaged ist) — niemals ein blankes `git commit` hier.
 2. **Bei `git add`/`git commit`-Fehler durch Index-Lock** (`Unable to create '.git/index.lock': File exists`): eine andere Session arbeitet gerade parallel an diesem geteilten Repo — kein echter Fehler. Ein paar Sekunden warten, erneut versuchen, bis zu 5x. Die Lock-Datei nie selbst anfassen.
@@ -86,6 +86,70 @@ Volles Schema (Feldreferenz, Beispiel, Live-Case-Anzahl-Faustregel) liegt zentra
 Vor dem Einrichten prüfen, ob die Sandbox-Daten in isolierten Dateien/DBs pro Autor/Buch liegen (git-Restore sicher) oder in einer **geteilten** Datei/DB über mehrere echte Autoren/Bücher hinweg (git-Restore NICHT sicher — würde auch echte Änderungen zurückrollen). Isolierte Artefakte: Git-Tag als Baseline, Reset via `git checkout <tag> -- <pfad>` + `git clean -fd -- <pfad>`, strikt pfad-gescoped. Geteilte Artefakte (z.B. eine gemeinsame Discoveries-DB über alle Autoren): niemals git-restoren — stattdessen über die MCP-Tools selbst zurücksetzen, die ohnehin nach `author_slug`/exakter ID scopen (z.B. Baseline-Liste bekannter Einträge vergleichen, Differenz per delete/write-Tool ausgleichen).
 
 Konkretes Beispiel: `/home/markus-michalski/projekte/skill-evals/storyforge/author-check/sandbox.md`
+
+### MCP Surface Register — plugin-weites Gedächtnis statt Ad-hoc-Wiederentdeckung (Issue #26/#27)
+
+Ohne dieses Register entdeckt jeder Skill-Rollout dieselben zwei Lückenklassen neu und schreibt eine
+eigene Ad-hoc-Notiz in sein eigenes `sandbox.md` — bestätigt duplizierter Fall: `chapter-writer`s
+`sandbox.md` leitete fast wortgleich her, was `start-session`s `sandbox.md` bereits dokumentiert
+hatte. Stattdessen: eine Datei pro Plugin,
+`{skillEvalsDir}/{plugin-name}/mcp-surface-register.md`, angelegt beim Onboarding (leer, siehe
+`prompt-self-improving-skill-playbook.md` Phase 1 Schritt 3b + Phase 2) — für ein Plugin, das
+bereits VOR dieser Erweiterung onboarded wurde (z.B. storyforge), existenzbasiert nachgeholt beim
+nächsten Skill-Rollout (nicht am "ist das der allererste Live-Lauf?" festgemacht, das wäre für
+storyforge falsch), von JEDEM Skill-Rollout vor
+Prompt 3 gelesen und mit neuen Funden ergänzt. Zwei Tabellen:
+
+**MCP Tool Scope** — Tool | Scope (`per-entity` / `global-singleton`) | Restore Strategy | Notes
+**Fixture Inventory** — Entity (z.B. `zz-sandbox-book-memoir`) | Feld/Enum | Vorhandene Werte | Fehlende Werte
+
+**Fixture-Completeness-Pre-Check:** Bevor ein Skill live-getestet wird, gegen die Fixture-Inventory-
+Tabelle prüfen, ob die für seine Live-Cases benötigten Zustände (z.B. ein Enum-Wert wie
+`consent_status: refused`) tatsächlich vorhanden sind. Fehlt einer und ist er eine bekannte
+Enum-Permutation der Domäne (keine neu erfundene Datenart) → einmalig über das echte
+Anlage-Tool des Plugins erzeugen, exakt nach derselben "über die echten Skills, nicht handgetippt"-
+Regel oben, `zz-sandbox-`-Präfix, Ergebnis sofort in die Tabelle eintragen. Ist die fehlende
+Fixture nicht sicher automatisch erzeugbar (z.B. würde reale Personendaten fingieren müssen, wo die
+Zuordnung nicht eindeutig ist): genau diesen einen Case mit einer NAMENTLICH benannten Lücke
+blocken — nicht vage NEEDS-HUMAN-REVIEW, sondern "Case X braucht Fixture-Zustand Y, existiert
+nicht" — restliche Cases laufen normal weiter.
+
+**Entscheidungsregel für globale Singleton-Tools** (Tools ohne Entity-Slug-Parameter, z.B.
+storyforges `get_session()`/`update_session()` — eine einzelne Zeile, nicht pro Autor/Buch
+gescoped, die `zz-sandbox-`-Konvention greift hier strukturell nicht): nicht danach klassifizieren,
+*warum* ein Case den Call macht (narrativ, nicht prüfbar), sondern danach, was NACH dem Call
+passiert — liest irgendetwas den Singleton-Wert danach: die eigenen Assertions dieses Cases, ein
+späterer Schritt desselben Skills, ODER ein anderer Skill in einem künftigen Live-Lauf (das
+Register ist plugin-weit, der Singleton hat keine Sandbox-Baseline)?
+- **Nein** → `no-restore-accepted-drift`. Kein Restore-Versuch, kein Downgrade des restlichen Cases
+  auf simuliert — nur dieser eine Call bleibt unbewertet. Konkretes Beispiel: `chapter-writer`s
+  Step 7.5 (`update_session()` als reiner "zuletzt bearbeitet"-Zeiger-Update, nicht das eigentliche
+  Testobjekt des Cases).
+- **Ja** → Snapshot+Restore ist Pflicht. Ist der Call selbst das eigentliche Testobjekt (wie bei
+  `start-session`, dessen ganzer Zweck das Testen von Session-Updates ist), gilt
+  `best-effort-snapshot-restore` mit dokumentierten verlustbehafteten Rändern — Live-Abdeckung des
+  eigentlichen Testobjekts zu verlieren wäre schlimmer als ein unvollständiger Restore. Konkretes
+  Beispiel: `start-session`s Empty-String-Transport-Bug (Restore mit `" "` statt echtem `""`),
+  dokumentiert in `start-session/sandbox.md` — dieser Workaround gehört als Restore-Strategie-Eintrag
+  ins Register, nicht nur isoliert in `start-session`s eigenem `sandbox.md`.
+
+**Regel 1 (zwingend, unabhängig von obiger Einstufung):** Jeder Live-Case, der einen im Register als
+`global-singleton` erfassten Tool-Write macht, MUSS den Vorwert unmittelbar vor dem Call per
+Read/Get sichern — schließt allein schon den Fehlermodus "Vorwert nie gesichert, Restore
+unmöglich" (genau das, was `chapter-writer`s Case mit `update_session()` traf). Das Sichern kostet
+fast nichts; ob der Snapshot danach für einen Restore genutzt wird, ist der einzige echte
+Verzweigungspunkt (siehe Entscheidungsregel oben).
+
+**Cross-Skill-Pollution:** Ein "incidental" Write in Skill A kann Skill B's eigenen
+Core-Purpose-Live-Case später kaputtmachen, weil ein globaler Singleton keine Sandbox-Baseline zum
+Zurücksetzen hat. Jeder Case, der auf einem Singleton-Wert assertiert, muss daher gegen seinen
+EIGENEN, unmittelbar vorher gesicherten Snapshot/Delta prüfen — nie gegen einen angenommenen
+absoluten Ausgangswert.
+
+Klassifizierung (per-entity/global-singleton, welche Restore-Strategie greift) bleibt Agenten-Urteil
+pro Fund — gleiches Muster wie die Read-Only-Klassifikation in `workflows/skill-rollout.js` (echtes
+Tool-Verhalten prüfen, nicht Namens-Präfix, Ergebnis auditierbar im Log) —, das Ergebnis wird ins
+Register geschrieben, damit der nächste Skill-Rollout es nachschlagen statt neu herleiten kann.
 
 ### Live-Tier läuft NICHT in der schnellen Iterationsschleife mit
 
