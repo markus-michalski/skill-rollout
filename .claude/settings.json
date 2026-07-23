@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_mm-dev-toolkit_mm-dev-toolkit-mcp__tool_check_dependencies",
+      "mcp__plugin_mm-dev-toolkit_mm-dev-toolkit-mcp__tool_resolve_template",
+      "mcp__plugin_mm-dev-toolkit_mm-dev-toolkit-mcp__tool_validate_project_smoke_tests",
+      "Bash(node --check *)",
+      "Bash(git fetch *)",
+      "Bash(gh search *)",
+      "mcp__plugin_skill-rollout_skill-rollout-mcp__tool_resolve_config",
+      "Bash(~/.mm-dev-toolkit/venv/bin/pytest *)",
+      "mcp__plugin_life-hub_life-hub-mcp__tool_get_case",
+      "mcp__plugin_life-hub_life-hub-mcp__tool_get_person",
+      "mcp__plugin_life-hub_life-hub-mcp__tool_list_deadlines",
+      "mcp__plugin_life-hub_life-hub-mcp__tool_list_notes",
+      "mcp__plugin_life-hub_life-hub-mcp__tool_list_correspondence",
+      "mcp__plugin_life-hub_life-hub-mcp__tool_list_contacts",
+      "mcp__plugin_life-hub_life-hub-mcp__tool_list_shared_contacts",
+      "mcp__plugin_life-hub_life-hub-mcp__tool_get_attachment_context",
+      "mcp__liveserver__ssh_read_log",
+      "mcp__liveserver__ssh_list_files",
+      "mcp__plugin_storyforge_storyforge-mcp__get_author",
+      "mcp__liveserver__docker_container_logs"
+    ]
+  }
+}
