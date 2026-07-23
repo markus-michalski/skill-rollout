@@ -418,8 +418,48 @@ skill's name or a stale STATUS.md note; \`configure\` in storyforge was wrongly 
 and it wasn't) AND the Live column isn't already ✅ or verified N/A AND the plugin playbook's own
 Prompt 3 section is a real, ready-to-run prompt, not a blocked placeholder.**
 
-**Hard gate, check this BEFORE anything else in this section:** if the plugin playbook states that
-this plugin's live-tier sandbox strategy has not been designed yet, do NOT attempt Prompt 3
+**Read-only bypass, check this FIRST, before the hard gate below (issue #24):** grep every domain
+MCP tool call this skill's own SKILL.md actually makes — not a plugin-wide sample, this specific
+skill's own surface, real invocations only (a tool NAMED in cautionary prose, e.g. "unlike
+\`update_note\`, this skill only reads", is not itself a call). Two independent conditions must both
+hold, checked in this order:
+
+1. **Classify by what each tool DOES, not by its name.** For every call found, confirm from the
+   tool's actual documented behavior (its description, or the MCP server's own source if the
+   description is ambiguous) that it cannot create/update/delete/move/append/write anything — never
+   infer this from a prefix alone. A name that LOOKS read-ish is not evidence: e.g. a hypothetical
+   \`search_and_replace_X\` starts with \`search_\` but mutates; \`resolve_and_apply_Y\` starts with
+   \`resolve_\` but applies a change. The read-verb prefixes below are a closed list to sanity-check
+   against, NOT a shortcut that replaces checking real behavior — a call matching one of these
+   prefixes still needs its actual behavior confirmed, and a call matching NONE of them (even if it
+   "sounds read-only" some other way) fails this bypass outright, no exceptions invented on the spot:
+   \`get_\`, \`list_\`, \`search_\`, \`resolve_\`, \`read_\`. If you cannot confirm a call's real
+   behavior with confidence, treat it as disqualifying — fall through to the hard gate, do not guess
+   it's safe.
+2. **Zero write-capable calls anywhere in this skill's surface**, per that same real-behavior check —
+   \`create_\`, \`update_\`, \`delete_\`, \`write_\`, \`move_\`, \`append_\`, and any other verb (this
+   list is illustrative, not closed) whose actual behavior mutates state. One write-capable call
+   anywhere disqualifies the whole skill from this bypass — no partial credit; fall through to the
+   hard gate below as normal.
+
+**Even if both conditions above hold, this bypass addresses MUTATION risk only — it is not a
+read-anything clearance.** If the real data these calls would READ is itself sensitive (personal,
+legal, medical, or business/customer data — not just "this plugin's own docs" or public content),
+that is still a stop-and-flag under the "would touch real non-sandbox data" condition later in this
+prompt, exactly as if this were a write. Read-only clearance existing for storyforge/mm-skills-style
+lookups (public wiki pages, the plugin's own project registry) does not generalize to a skill whose
+read surface touches a real person's case file, medical record, or financial data — treat that case
+as blocked regardless of mutation risk, add the \`needsHumanReview\` entry, and do not proceed.
+
+If — and only if — both conditions above hold AND the data being read isn't independently sensitive:
+this skill is 🟩 READ-ONLY-cleared regardless of the plugin-level sandbox gate below. Skip the hard
+gate entirely and go straight to running Prompt 3 against the real system, per the "if the gate
+above does NOT apply" paragraph further down. Record in loop-log.md which calls you found, their
+confirmed real behavior (not just their names), and that zero were write-capable — so the
+classification is auditable, not asserted.
+
+**Hard gate, check this if the read-only bypass above did NOT apply:** if the plugin playbook states
+that this plugin's live-tier sandbox strategy has not been designed yet, do NOT attempt Prompt 3
 yourself, do NOT invent a sandbox strategy on the spot no matter how sensible it seems, and do NOT
 skip it silently either. This gate is about whether a verified-safe isolation strategy already
 exists for the plugin's shared storage — NOT about whether the plugin's subject matter sounds
@@ -430,18 +470,25 @@ case. storyforge only qualifies because concrete design work already happened he
 \`zz-sandbox-\` naming convention, path-scoped resets, the isolated-files-vs-shared-DB distinction —
 see its own \`sandbox.md\` files), not because of its subject matter. Add an entry to
 \`needsHumanReview\` naming this skill and stating that its live tier is blocked pending a human
-sandbox-design conversation, leave the Live column as ⬜ (not N/A — N/A means "verified not
-applicable", this is "applicable but blocked", a different state), and move on. This is exactly as
-hard a stop as the "would touch real non-sandbox data" condition later in this prompt — because
-it's the same risk, just caught earlier, before any sandbox even exists to accidentally misuse.
+sandbox-design conversation, mark the Live column 🟥 BLOCKED (not ⬜ — leaving it ⬜ is indistinguishable
+from "not attempted yet"; not N/A either — N/A means "verified not applicable", this is "applicable
+but blocked", a third, distinct state), and move on. This is exactly as hard a stop as the "would
+touch real non-sandbox data" condition later in this prompt — because it's the same risk, just
+caught earlier, before any sandbox even exists to accidentally misuse.
 
-If the gate above does NOT apply (a verified-safe sandbox strategy already exists for this plugin —
-storyforge being the only confirmed case today, purely because that design work happened here
-first): follow the plugin playbook's Prompt 3 exactly, including: reuse
-the shared sandbox, never touch another skill's fixtures, scope every reset to the exact sub-path
-this skill's own cases touch, run live cases strictly in sequence (never parallel — they mutate
-shared state), require a real tool_use block as evidence for every claimed action, verify claimed
-side effects with an independent post-run check.
+If neither block above stopped you — either this skill cleared the read-only bypass, or a
+verified-safe sandbox strategy already exists for this plugin (storyforge being the only confirmed
+case today, purely because that design work happened here first) — run Prompt 3 against the real
+system, with the exact evidentiary rigor depending on which path got you here:
+- **Read-only-cleared skill:** no sandbox needed — there is nothing to reset before or after, since
+  a read cannot mutate shared state. Still require a real \`tool_use\` block as evidence for every
+  claimed call (never take the executor's prose claim alone), and still run cases strictly in
+  sequence.
+- **Sandbox-exists path:** follow the plugin playbook's Prompt 3 exactly, including: reuse the
+  shared sandbox, never touch another skill's fixtures, scope every reset to the exact sub-path
+  this skill's own cases touch, run live cases strictly in sequence (never parallel — they mutate
+  shared state), require a real tool_use block as evidence for every claimed action, verify claimed
+  side effects with an independent post-run check.
 
 If this skill's SKILL.md genuinely has no MCP domain-tool calls at all (a different case from the
 gate above — this is "no live tier needed", not "blocked"): do NOT leave the Live column ⬜. Grep it
