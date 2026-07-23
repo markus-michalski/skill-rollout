@@ -163,6 +163,24 @@ each playbook's facts are specific to its own repo.
 - **Prompt 2** (Loop laufen lassen, simulierter Tier): same shape as the example, adapted
   paths/repo name, including the sync-to-deploy-locations step ONLY if Phase 1 found real deploy
   locations distinct from the source repo.
+
+  **Hard requirement on Prompts 1 AND 2 — do not lose this to paraphrasing (issue #20):** both
+  prompts commit into `{skillEvalsDir}` (evals.json in Prompt 1; loop-log.md/loop-state.json in
+  Prompt 2). `{skillEvalsDir}` is a single repo SHARED across every plugin this rollout has ever
+  onboarded — a concurrently-running session for a DIFFERENT plugin may be committing to its own
+  subtree of this exact same repo, in this exact same shared working tree/index/HEAD, at the exact
+  same time, and it has no worktree isolation the way the target plugin's own repo does. "Same
+  shape as the example" is not enough for this specific part — copy the FULL "Git-Sicherheit für
+  JEDEN Commit in skill-evals" section from `{referenceDir}/self-improving-skills.md` verbatim in
+  substance into the generated prompt text, not just its headline. In short (the source section has
+  the full reasoning, do not compress it away): (1) scope BOTH the `git add` AND the `git commit`
+  itself to `{skillEvalsDir}/{plugin-name}/` — a scoped add alone does not stop a plain `git commit`
+  from also picking up another session's files already staged in the same shared index; (2) retry
+  on index-lock errors (a concurrent session mid-operation, not a real error); (3) on a rejected
+  push, `git fetch` + `git rebase` — distinguish a transient refusal (another session's in-flight
+  uncommitted work sitting in the shared tree — wait and retry, NEVER stash/checkout/reset to "clean
+  up", that destroys the other session's work) from a genuine content conflict (stop, flag,
+  `needsHumanReview`); (4) never `git push --force`, under any of the above conditions.
 - **Prompt 3** (Live-MCP-Tier): three possible outcomes, per step 3/3a's findings — do not blur
   them together:
   1. No MCP server at all → short explicit note instead of a prompt ("Dieses Plugin hat keinen

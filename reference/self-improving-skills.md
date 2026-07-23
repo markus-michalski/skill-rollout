@@ -18,7 +18,20 @@ For each distinct behavior rule or edge case stated in the SKILL.md, write one e
 evals.json always lives externally, at ~/projekte/skill-evals/<plugin-or-repo-name>/<skill-name>/evals.json — never inside the source repo itself, regardless of whether it's a private repo or a public Claude plugin repo (one with a .claude-plugin/plugin.json that declares a shipped "skills" path). This also keeps eval/test material from ever shipping to end users of a packaged plugin. (Earlier revisions of this playbook kept private-repo evals in-repo at <skill-dir>/evals/evals.json — that convention was retired; any pre-existing in-repo evals.json files have already been migrated externally as a one-time cleanup, don't recreate them.)
 ```
 
-- Nach dem Erstellen: evals.json separat committen, BEVOR die Loop startet — sonst gibt's keinen sauberen Diff-Ausgangspunkt für Iteration 1.
+- Nach dem Erstellen: evals.json separat committen, BEVOR die Loop startet — sonst gibt's keinen sauberen Diff-Ausgangspunkt für Iteration 1. **Dabei die Git-Sicherheitsregel unten befolgen — Pflicht, nicht optional.**
+
+## Git-Sicherheit für JEDEN Commit in skill-evals (Issue #20)
+
+`~/projekte/skill-evals` ist EIN geteiltes Git-Repo über alle Rollout-Ziel-Plugins hinweg (mm-skills, storyforge, ...) — anders als der Ziel-Plugin-Repo selbst, der pro Batch über `preIsolated`/`EnterWorktree` isoliert ist, hat skill-evals **keine** Isolation. Zwei Rollout-Sessions gegen unterschiedliche Plugins teilen sich dasselbe Arbeitsverzeichnis, denselben Index, denselben HEAD.
+
+Gilt für JEDEN Commit hier — evals.json, loop-log.md, loop-state.json, STATUS.md, batch-digest.md, self-improving-skill-{plugin}.md, alles. Die beiden Schritte gehören zusammen, nicht einzeln befolgen:
+
+1. **Scoped Add UND Scoped Commit — Scoped Add allein reicht nicht.** `git add ~/projekte/skill-evals/{plugin-name}/` (oder noch spezifischer) — NIEMALS `git add -A`, NIEMALS blankes `git add .` vom skill-evals-Root aus. Aber: ein scoped Add kontrolliert nur, was DU staged — eine parallel laufende Session kann bereits eigene Dateien im selben, geteilten Index stehen haben, und ein normales `git commit` snapshotted den GESAMTEN Index, nicht nur die eigenen Pfade. Deshalb auch beim Commit scopen: `git commit -- ~/projekte/skill-evals/{plugin-name}/ -m "..."` (die `--`-Pathspec-Form committet NUR passende Pfade, unabhängig davon, was sonst noch gestaged ist) — niemals ein blankes `git commit` hier.
+2. **Bei `git add`/`git commit`-Fehler durch Index-Lock** (`Unable to create '.git/index.lock': File exists`): eine andere Session arbeitet gerade parallel an diesem geteilten Repo — kein echter Fehler. Ein paar Sekunden warten, erneut versuchen, bis zu 5x. Die Lock-Datei nie selbst anfassen.
+3. **Bei `git push`-Rejection** (andere Session hat zwischenzeitlich gepusht): `git fetch origin` dann `git rebase origin/main` — kein blankes `git pull`, der eigene Change ist durch Schritt 1 bereits scoped committed. Zwei unterschiedliche Fehlerarten, unterschiedlich behandeln:
+   - **Rebase verweigert wegen uncommitteter Änderungen im geteilten Arbeitsverzeichnis:** das ist der In-Flight-Write der ANDEREN Session, nicht deiner — nicht anfassen. Transient, löst sich meist von selbst, sobald die andere Session ihren eigenen Add+Commit-Zyklus abschließt. Ein paar Sekunden warten, Fetch+Rebase erneut versuchen, bis zu 5x. **Niemals** `git stash`, `git checkout -- .` oder `git reset --hard` zum "Aufräumen" — das würde die uncommittete Arbeit der anderen Session zerstören, genau das, was diese Regel verhindern soll.
+   - **Rebase meldet einen echten Inhalts-Konflikt** (keine Verweigerung, echter Konflikt): sollte bei korrektem Scoped-Commit nicht passieren — falls doch: stoppen, nicht raten, `needsHumanReview`-Eintrag mit den betroffenen Dateien.
+   Nach erfolgreichem Rebase: Push einmal erneut versuchen. **Niemals `git push --force`**, unter keiner der obigen Bedingungen.
 
 ## Loop laufen lassen
 
@@ -36,6 +49,8 @@ Not every failing assertion is a real skill bug — sometimes the assertion itse
 Log each iteration: number, score, keep or discard, what you tried. Do NOT stop to ask me. I may be asleep. Keep looping until I interrupt you, you hit a perfect score, or one of the stall conditions above triggers.
 
 Alongside the prose log, maintain a loop-state.json next to it, per the schema in this plugin's reference/eval-schema.md (iteration number, best score + pass/total, per-iteration history with keep/discard labels and commit hashes, stall streak, per-assertion fail streaks, stopped/stop_reason). Update it after every iteration, not just at the end — it's the quick-glance, machine-readable twin of the prose log, and lets a resumed/interrupted session pick up state without re-reading the whole thing.
+
+Whenever loop-log.md or loop-state.json get committed inside skill-evals: use the scoped-add + safe-push-retry rule from "Git-Sicherheit für JEDEN Commit in skill-evals" above — never a blind `git add -A`/`.` from the skill-evals root, never a force-push.
 ```
 
 ## Nach Abschluss
