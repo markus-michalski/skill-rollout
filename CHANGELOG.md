@@ -8,7 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Nothing yet
+- `reference/eval-schema.md`, `workflows/skill-rollout.js`, `reference/prompt-self-improving-skill-
+  playbook.md`: new 🟩 READ-ONLY tier in the STATUS.md Live-column legend, between 🟦 N/A and 🟥
+  BLOCKED. The previous BLOCKED default conflated any real MCP domain-tool surface with "needs
+  sandbox design", regardless of whether that surface could actually mutate data — confirmed
+  concrete case: mm-skills' `socialcraft` (read-only `wikijs`/`mm-dev-toolkit` lookups) was blocked
+  alongside `shopware-produkt-wizard` (genuinely creates/updates real shop products). Stage A now
+  greps each skill's OWN domain-tool surface against a read-verb allowlist (`get_`/`list_`/
+  `search_`/`resolve_`/`read_`) BEFORE the sandbox-design hard gate; verified zero write-verb calls
+  (`create_`/`update_`/`delete_`/`write_`/`move_`/`append_`) anywhere bypasses the plugin-level
+  sandbox-design requirement entirely and runs Prompt 3 directly against the real system (no reset
+  needed — a read cannot mutate shared state). One write-capable call anywhere disqualifies the
+  bypass — no partial credit, falls through to the existing BLOCKED gate. Also fixes a pre-existing
+  inconsistency found while implementing this: the hard-gate text said to leave a blocked skill's
+  Live column at a bare ⬜, but the actually-used convention (confirmed in mm-skills' real
+  STATUS.md) is 🟥 BLOCKED, matching eval-schema.md's own legend (issue #24).
 
 ### Changed
 - Nothing yet

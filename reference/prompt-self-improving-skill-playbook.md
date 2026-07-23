@@ -239,6 +239,14 @@ each playbook's facts are specific to its own repo.
      unambiguously, what the reset procedure is and what it must never touch) BEFORE Prompt 3 is
      ever written for this plugin. This blocked state is mandatory, not a suggestion the runner can
      skip past — Prompt 2 (simulated tier) still runs fully, only Prompt 3 is gated.
+
+     **This plugin-level block is not necessarily final per-skill (issue #24):** at rollout time,
+     `workflows/skill-rollout.js`'s Stage A checks each individual skill's OWN domain-tool surface
+     for a verified-read-only bypass BEFORE falling back to this plugin-level block — a skill whose
+     MCP calls are all read-verbs (`get_`/`list_`/`search_`/`resolve_`/`read_`) with zero write-verb
+     calls anywhere gets classified 🟩 READ-ONLY and runs Prompt 3 directly against the real system,
+     regardless of this placeholder. Nothing to add here in the generated playbook for that — the
+     bypass check lives entirely in the workflow script and applies uniformly to every plugin.
 - Closing "Nach Abschluss" section, same as the template, pointing at this plugin's own STATUS.md.
 
 ## Phase 3 — Self-check before finishing
