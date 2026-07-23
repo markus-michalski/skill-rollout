@@ -350,7 +350,7 @@ fresh empty worktree here would just isolate you from the (nonexistent) staged d
 this stage's instructions.`
 }
 
-function evalAndEditPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, evalSchemaPath) {
+function evalAndEditPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, evalSchemaPath, referenceDir) {
   return `You are Stage A (eval + edit) of a 3-stage unattended pipeline for ONE skill, as part of an
 unattended batch. No human will review anything until an independent reviewer (Stage B, a separate
 agent) sees your diff — act accordingly, but DO NOT guess at anything you can verify or that
@@ -480,6 +480,43 @@ but blocked", a third, distinct state), and move on. This is exactly as hard a s
 touch real non-sandbox data" condition later in this prompt — because it's the same risk, just
 caught earlier, before any sandbox even exists to accidentally misuse.
 
+**MCP Surface Register pre-check (issue #26/#27) — sandbox-exists path only, run this BEFORE any
+live case that writes anything.** Read \`${skillEvalsDir}/${pluginName}/mcp-surface-register.md\`.
+If it does not exist yet — either this plugin's onboarding predates this register (e.g. an
+already-onboarded plugin like storyforge, self-healing on its first rollout after this feature
+shipped) or something skipped the onboarding step that should have created it — create it now with
+the two empty table skeletons rather than treating a missing file as a blocker; do not assume
+"missing" means "first-ever live-tier run for this plugin", it doesn't for storyforge. Full
+mechanics in \`${referenceDir || '(referenceDir not provided — see the warning already logged for this run)'}/self-improving-skills.md\`'s
+"MCP Surface Register" section, do not re-derive them here. For each planned live case:
+1. Look up every MCP tool it calls in the register's Tool Scope table. A tool with no entity-scoping
+   slug parameter (writes/reads one single row shared plugin-wide, not per-author/book/chapter) is
+   \`global-singleton\` — classify by real behavior, same rigor as the read-only bypass above, not by
+   guessing from the name; add a new row if this tool isn't in the register yet.
+2. **Rule 1, mandatory for every \`global-singleton\` write, no exceptions:** capture its current
+   value via a real read/get call immediately before making the write — this alone prevents the
+   documented chapter-writer failure mode (prior value never captured, restore impossible).
+3. Decide restore strategy by what happens AFTER the call, not by why the call is being made: does
+   this case's own assertions, a later step in this same skill, or another skill's live case
+   (current or future — the register is plugin-wide, the singleton has no sandbox baseline) read
+   this value afterward? If nothing does: \`no-restore-accepted-drift\` — do not attempt a restore,
+   do not downgrade the rest of this case to simulated, just don't assert on this one call's effect;
+   record it as an expected outcome, not a NEEDS-HUMAN-REVIEW flag (this is issue #26's actual
+   fix). If something does: \`best-effort-snapshot-restore\` — restore the captured value afterward,
+   document any lossy edge case actually hit (e.g. a transport limitation), and never claim a
+   byte-identical restore you didn't verify.
+4. Look up every fixture STATE this skill's live cases need (an enum value, a specific field) in the
+   register's Fixture Inventory table. Missing and it's a known enum permutation of the domain (not
+   inventing a new data shape) → create it once via the plugin's own real creation MCP tool,
+   \`zz-sandbox-\`-prefixed, same discipline as any other sandbox entity; record the addition in the
+   register immediately. Missing and not safely auto-creatable → block only THIS specific case with
+   a named gap (\"case N needs fixture state X on entity Y, does not exist\") in \`needsHumanReview\`,
+   keep running this skill's other cases normally — this is issue #27's actual fix, replacing the
+   old pattern of leaving a vague NEEDS-HUMAN-REVIEW note that nothing ever resolves.
+5. Write back anything newly learned into the register before finishing this skill's live tier —
+   the whole point is that skill #2 never re-derives what skill #1 already found. Commit it under
+   the same scoped-add/scoped-commit git-safety rule as every other \`${skillEvalsDir}\` file.
+
 If neither block above stopped you — either this skill cleared the read-only bypass, or a
 verified-safe sandbox strategy already exists for this plugin (storyforge being the only confirmed
 case today, purely because that design work happened here first) — run Prompt 3 against the real
@@ -488,11 +525,12 @@ system, with the exact evidentiary rigor depending on which path got you here:
   a read cannot mutate shared state. Still require a real \`tool_use\` block as evidence for every
   claimed call (never take the executor's prose claim alone), and still run cases strictly in
   sequence.
-- **Sandbox-exists path:** follow the plugin playbook's Prompt 3 exactly, including: reuse the
-  shared sandbox, never touch another skill's fixtures, scope every reset to the exact sub-path
-  this skill's own cases touch, run live cases strictly in sequence (never parallel — they mutate
-  shared state), require a real tool_use block as evidence for every claimed action, verify claimed
-  side effects with an independent post-run check.
+- **Sandbox-exists path:** follow the plugin playbook's Prompt 3 exactly, including the MCP Surface
+  Register pre-check just above for every case that writes anything: reuse the shared sandbox,
+  never touch another skill's fixtures, scope every reset to the exact sub-path this skill's own
+  cases touch, run live cases strictly in sequence (never parallel — they mutate shared state),
+  require a real tool_use block as evidence for every claimed action, verify claimed side effects
+  with an independent post-run check.
 
 If this skill's SKILL.md genuinely has no MCP domain-tool calls at all (a different case from the
 gate above — this is "no live tier needed", not "blocked"): do NOT leave the Live column ⬜. Grep it
@@ -902,9 +940,11 @@ own placeholders are ABSOLUTE paths on THIS machine, resolved above — they are
 ${pluginRepoPath} (the target repo you are onboarding, which is a different repo than skill-rollout
 itself). Follow its Phase 1 (Investigate) / Phase 2 (Draft) / Phase 3
 (Self-check) exactly, including the "never guess" rule and the PreToolUse-hook check for
-\`gh pr create\`. This creates ${skillEvalsDir}/${plugin}/self-improving-skill-${plugin}.md
-and ${skillEvalsDir}/${plugin}/STATUS.md (mirroring storyforge/STATUS.md's format and the
-N/A/NEEDS-HUMAN-REVIEW conventions in ${evalSchemaPath}). Commit these new files following:
+\`gh pr create\`. This creates ${skillEvalsDir}/${plugin}/self-improving-skill-${plugin}.md,
+${skillEvalsDir}/${plugin}/STATUS.md (mirroring storyforge/STATUS.md's format and the
+N/A/NEEDS-HUMAN-REVIEW conventions in ${evalSchemaPath}), and — only if step 3a found a verified-safe
+sandbox strategy — ${skillEvalsDir}/${plugin}/mcp-surface-register.md (empty table skeletons, per the
+playbook's step 3b). Commit these new files following:
 
 ${skillEvalsGitSafety(skillEvalsDir, plugin)}
 
@@ -992,7 +1032,7 @@ for (const skill of skillsToProcess) {
   // Stage A — eval + edit, stage changes but do not commit.
   let editResult
   try {
-    editResult = await agent(evalAndEditPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, evalSchemaPath), {
+    editResult = await agent(evalAndEditPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, evalSchemaPath, referenceDir), {
       label: `eval:${skill.name}`,
       phase: 'Rollout',
       schema: EDIT_RESULT_SCHEMA,

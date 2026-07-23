@@ -98,6 +98,24 @@ def test_onboard_agent_prompt_receives_referencedir_explicitly():
     )
 
 
+def test_mcp_surface_register_filename_spelled_consistently():
+    """mcp-surface-register.md is a runtime-generated per-plugin file (lives at
+    {skillEvalsDir}/{plugin}/..., never on disk in this repo, so it can't be
+    existence-checked like the reference/ docs above) — this guards against the
+    4 files that mention it by literal string drifting apart on the name
+    (skill-rollout issue #26/#27)."""
+    combined = (
+        _workflow_source()
+        + ONBOARD_PLAYBOOK.read_text(encoding="utf-8")
+        + (REFERENCE_DIR / "self-improving-skills.md").read_text(encoding="utf-8")
+        + (REFERENCE_DIR / "eval-schema.md").read_text(encoding="utf-8")
+    )
+    assert combined.count("mcp-surface-register.md") >= 4, (
+        "expected all 4 files that describe the MCP Surface Register to spell "
+        "its filename identically as 'mcp-surface-register.md'"
+    )
+
+
 def test_onboarding_playbook_placeholders_are_absolute_not_bare_relative():
     """The onboarding playbook must instruct the agent to use {referenceDir}-style
     absolute paths, not bare `reference/...` paths that would resolve against

@@ -23,6 +23,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inconsistency found while implementing this: the hard-gate text said to leave a blocked skill's
   Live column at a bare ⬜, but the actually-used convention (confirmed in mm-skills' real
   STATUS.md) is 🟥 BLOCKED, matching eval-schema.md's own legend (issue #24).
+- `reference/self-improving-skills.md`, `reference/eval-schema.md`, `reference/prompt-self-improving-
+  skill-playbook.md`, `workflows/skill-rollout.js`: new per-plugin MCP Surface Register
+  (`{skillEvalsDir}/{plugin}/mcp-surface-register.md`), closing issues #26 and #27. Previously,
+  onboarding only made a one-time, binary, plugin-level judgment ("does a safe sandbox strategy exist
+  at all?") — it kept no structural inventory of which specific MCP tools are per-entity vs.
+  global-singleton, or which fixture states the shared sandbox actually contains, so every skill's
+  rollout re-discovered the same gaps from scratch (confirmed duplication: `chapter-writer`'s
+  `sandbox.md` independently re-derived almost the same explanation `start-session`'s `sandbox.md`
+  already had). The register is now created at onboarding (or lazily, existence-based, for an
+  already-onboarded plugin) and consulted/updated by every skill's Stage A run before Prompt 3: (1) a
+  fixture-completeness pre-check auto-creates a missing, known enum-permutation fixture state via the
+  plugin's own real creation tool, or names a specific gap and blocks only that one case if it can't
+  be safely auto-created (issue #27); (2) a singleton-tool decision key — does anything read the
+  value after the call, this case's own assertions, a later step, or another skill's future live case
+  — classifies each global-singleton MCP write as `no-restore-accepted-drift` (no restore attempted,
+  case not downgraded) or `best-effort-snapshot-restore` (the call itself is the system under test);
+  a new mandatory Rule 1 requires capturing the prior value before ANY singleton write regardless of
+  classification, closing the specific failure mode that left `chapter-writer`'s live case unable to
+  restore `update_session()`'s prior value (issue #26). New `↺ no-restore-accepted-drift` Notes-column
+  symbol in `eval-schema.md`, distinct from 🟨 NEEDS-HUMAN-REVIEW (this one is an expected, resolved
+  outcome, not an open question for a human).
 
 ### Changed
 - Nothing yet
