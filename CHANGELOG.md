@@ -20,7 +20,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- `workflows/skill-rollout.js`, `reference/self-improving-skills.md`,
+  `reference/prompt-self-improving-skill-playbook.md`: mandate scoped `git add` AND scoped
+  `git commit -- <path>` (never `-A`/bare `.`, never a plain `git commit`) plus safe
+  push-retry-via-rebase (never `--force`) at every point the rollout commits inside
+  `~/projekte/skill-evals` — evals.json, loop-log.md, loop-state.json, STATUS.md,
+  batch-digest.md, self-improving-skill-{plugin}.md. Unlike the target plugin's own repo
+  (isolated per-batch via `preIsolated`), `skill-evals` is a single repo SHARED across every
+  rollout-target plugin with no worktree isolation — running two rollout sessions concurrently
+  against different plugins (e.g. mm-skills + storyforge) risked a blind `git add -A` (or even
+  a *scoped* add followed by a *plain* `git commit`, which still snapshots the whole shared
+  index) sweeping up the other session's uncommitted, unrelated-plugin files. Also distinguishes
+  a rebase *refusal* (another session's in-flight uncommitted work sitting in the shared working
+  tree — retry, never "clean up" with stash/checkout/reset) from a real content *conflict* (stop,
+  flag `needsHumanReview`) — a code-review pass on the first draft found both the scoped-add-only
+  approach and the "rebase is always safe here" reasoning were incomplete. New shared
+  `skillEvalsGitSafety()` helper keeps the rule consistent across all touch points (Stage A,
+  Stage C, Onboard, plus an explicit commit-deferral note on the Select phase's batch-digest.md
+  write) rather than risking copy-paste drift (issue #20).
 
 ### Security
 - Nothing yet

@@ -186,6 +186,55 @@ function isValidPluginSlug(name) {
   return typeof name === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(name)
 }
 
+// Shared git-safety rule for EVERY commit to skillEvalsDir (issue #20). skillEvalsDir is a single
+// SHARED git repo across every rollout-target plugin (mm-skills, storyforge, ...) with NO isolation
+// mechanism — unlike pluginRepoPath, which preIsolated/EnterWorktree already protects. Two rollout
+// sessions running concurrently against DIFFERENT plugins still share this ONE repo's working tree,
+// index, and HEAD. This function's text must be interpolated at every point in this script (and in
+// reference/self-improving-skills.md, reference/prompt-self-improving-skill-playbook.md, and each
+// already-onboarded plugin's own self-improving-skill-{plugin}.md) that instructs a commit inside
+// skillEvalsDir — do not let any of them drift from this wording.
+function skillEvalsGitSafety(skillEvalsDir, pluginName) {
+  return `**Git safety rule for EVERY commit inside ${skillEvalsDir} (not the plugin repo — this
+applies separately, in addition to whatever git discipline the plugin repo itself needs):**
+${skillEvalsDir} is a single SHARED git repo across every plugin this rollout has ever touched, with
+NO worktree isolation — a rollout session for a DIFFERENT plugin may be committing to its own
+subtree of this exact same repo, in this exact same shared working tree/index/HEAD, at the exact
+same time. The two steps below are NOT independent hygiene tips — do both, in order, every time.
+
+1. **Scoped add AND scoped commit — a scoped add alone is not enough.** \`git add
+   ${skillEvalsDir}/${pluginName}/\` (or an even more specific sub-path) — NEVER \`git add -A\`, NEVER
+   a bare \`git add .\` from ${skillEvalsDir}'s root. But a scoped add only controls what YOU staged —
+   a concurrent session's own \`git add\` for ITS plugin can already be sitting in this same shared
+   index when you commit, and a plain \`git commit\` snapshots the WHOLE index, not just your own
+   staged paths. So commit with the SAME path scope too:
+   \`git commit -- ${skillEvalsDir}/${pluginName}/ -m "..."\` (the \`--\` pathspec form commits only
+   matching paths regardless of anything else currently staged) — never a bare \`git commit\` here.
+
+2. **On \`git add\`/\`git commit\` failing with an index-lock error** (\`Unable to create '.git/
+   index.lock': File exists\`): this means a concurrent session is mid-operation on this same shared
+   repo right now — NOT a real error. Wait a few seconds and retry, up to 5 attempts. Never delete or
+   otherwise touch the lock file yourself.
+
+3. **On \`git push\` rejection** (another session pushed first): \`git fetch origin\` then \`git
+   rebase origin/main\` (or the real default branch) — do NOT run a bare \`git pull\` first, your own
+   change is already committed at this point via step 1's scoped commit. Two distinct failure modes,
+   handle them differently:
+   - **Rebase refuses because the shared working tree has uncommitted changes** ("you have unstaged
+     changes" / similar): this means the OTHER session's own in-flight write is sitting in this same
+     working tree right now — it is NOT yours to touch. This is transient and should self-resolve
+     once that session finishes its own add+commit cycle. Wait a few seconds and retry the whole
+     fetch+rebase, up to 5 attempts. **Never** run \`git stash\`, \`git checkout -- .\`, or \`git reset
+     --hard\` to "clean up" here — any of those would destroy the other session's uncommitted work,
+     which is exactly the outcome this whole rule exists to prevent.
+   - **Rebase reports an actual conflicting hunk** (not a refusal, a real content conflict): this
+     should not happen given the scoped-commit discipline above (two sessions scoped to different
+     plugin subtrees never touch the same file) — if it does anyway, stop, do NOT guess at a
+     resolution, add a \`needsHumanReview\` entry naming the conflicting file(s).
+   After a successful rebase: retry the push once. **Never \`git push --force\`**, under any of the
+   above conditions, no exceptions.`
+}
+
 // Isolation preamble shared by all three stages. `role` is 'create' for Stage A (first to touch
 // pluginRepoPath — creates the worktree in non-preIsolated mode) or 'resume' for Stage B/C (must
 // re-enter the EXACT worktree Stage A created, identified by `worktreePath`, never a fresh one).
@@ -357,7 +406,11 @@ the plugin playbook's Prompt 2 exactly, with these autonomous-mode additions:
   batch digest) to \`${skillEvalsDir}/${pluginName}/${skillName}/loop-log.md\` documenting what you
   fixed and what the updated score is, and update \`loop-state.json\` to reflect current iteration
   state. Do NOT defer both writes to the end of this stage — a mid-run \`/skill-rollout:status\` check
-  should be meaningful even while this skill is still being processed.
+  should be meaningful even while this skill is still being processed. Whenever any of this work gets
+  committed inside ${skillEvalsDir} (evals.json's initial commit, or these loop-log/loop-state
+  writes) — including the plugin playbook's own Prompt 1/Prompt 2 commit instructions:
+
+${skillEvalsGitSafety(skillEvalsDir, pluginName)}
 
 **Prompt 3 (live-MCP tier) — only if ALL of: the plugin has a real MCP server (per the playbook's
 repo facts) AND this skill's SKILL.md actually calls domain MCP tools (grep it — don't assume from a
@@ -396,10 +449,15 @@ yourself to confirm, then mark it 🟦 N/A in STATUS.md with a one-line note of 
 ${evalSchemaPath}'s convention) — this is required, not optional, so a future batch selection doesn't wait
 forever on a skill that will never have a live tier.
 
-## Stage boundary — stop here, do NOT commit
+## Stage boundary — stop here, do NOT commit the ${pluginRepoPath} diff
 
 This is Stage A of a 3-stage pipeline (eval+edit → independent review → commit+PR). An independent
-reviewer sees your diff next; you never commit, push, or open a PR yourself.
+reviewer sees your ${pluginRepoPath} diff next; you never commit, push, or open a PR for it
+yourself. **This prohibition is about ${pluginRepoPath} specifically — it does NOT apply to
+${skillEvalsDir}.** evals.json's initial commit (per the plugin playbook's Prompt 1) and any
+loop-log.md/loop-state.json commits from the "Incremental progress logging" step above happen
+INSIDE this stage, into the separate ${skillEvalsDir} repo, following the git-safety rule given
+there — that is expected and correct, not a violation of this boundary.
 
 1. If you made no file changes at all in ${pluginRepoPath} (skill turned out already fully done, or
    you stopped early per a stop-and-flag condition below): set \`hasChanges: false\` and do NOT run
@@ -634,6 +692,11 @@ opened), write the final loop-state.json, and update this skill's row in
 ${skillEvalsDir}/${pluginName}/STATUS.md. Sync any SKILL.md change to every deploy location the
 plugin playbook's repo facts list.
 
+Commit and push this closing bookkeeping (and anything else this stage wrote inside
+${skillEvalsDir}) following:
+
+${skillEvalsGitSafety(skillEvalsDir, pluginName)}
+
 **Also append your result to the running batch digest**, so a human checking on a long batch
 mid-run doesn't have to wait for the whole batch to finish or dig through individual loop-logs:
 append (do not overwrite, do not remove anything already there — same append-only convention as
@@ -751,7 +814,10 @@ same convention as loop-log.md) a "## Batch started" header to
 ${skillEvalsDir}/${plugin}/batch-digest.md with the real current date/time (via \`date\`),
 the requested count (${count}), and the list of skills selected for this batch. This is the file
 each skill's own rollout will append its result to as it finishes — the header marks where this
-batch's entries begin, so a human tailing the file mid-run can tell batches apart.`,
+batch's entries begin, so a human tailing the file mid-run can tell batches apart. **Do NOT commit
+this write yourself** — leave it uncommitted in the working tree; the first selected skill's own
+Stage C bookkeeping commit (scoped to \`${skillEvalsDir}/${plugin}/\`) picks it up naturally as part
+of its normal commit, without this stage needing its own git-safety cycle.`,
   { schema: SELECTION_SCHEMA, phase: 'Select' }
 )
 
@@ -781,7 +847,11 @@ itself). Follow its Phase 1 (Investigate) / Phase 2 (Draft) / Phase 3
 (Self-check) exactly, including the "never guess" rule and the PreToolUse-hook check for
 \`gh pr create\`. This creates ${skillEvalsDir}/${plugin}/self-improving-skill-${plugin}.md
 and ${skillEvalsDir}/${plugin}/STATUS.md (mirroring storyforge/STATUS.md's format and the
-N/A/NEEDS-HUMAN-REVIEW conventions in ${evalSchemaPath}). If anything cannot be confirmed with certainty,
+N/A/NEEDS-HUMAN-REVIEW conventions in ${evalSchemaPath}). Commit these new files following:
+
+${skillEvalsGitSafety(skillEvalsDir, plugin)}
+
+If anything cannot be confirmed with certainty,
 list it in needsHumanReview instead of guessing — never guess. But set ok=false ONLY when the
 unconfirmed item actually gates a safe rollout (e.g. you could not determine the repo layout, the
 MCP-server facts, or the PR-creation mechanism / whether a PreToolUse hook blocks \`gh pr create\`).
