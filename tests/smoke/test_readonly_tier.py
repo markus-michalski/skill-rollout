@@ -87,10 +87,18 @@ def test_eval_schema_readonly_tier_addresses_mutation_risk_only():
 
 
 def test_eval_schema_readonly_bypasses_sandbox_conversation():
+    """Updated for issue #35: the plugin-level gate this tier bypasses is no
+    longer an undefined "sandbox-design conversation" — it's the concrete
+    create-testdata/reset-testdata/delete-testdata convention. The bypass
+    itself (READ-ONLY skips the gate entirely) is unchanged; only what the
+    gate requires changed."""
     text = _eval_schema_text()
-    assert "does NOT need the plugin-level sandbox-design conversation" in text, (
-        "expected the READ-ONLY tier to explicitly bypass the sandbox-design "
-        "requirement, not just exist as a label"
+    assert (
+        "does NOT need the plugin-level `create-testdata`/`reset-testdata`/"
+        "`delete-testdata` convention" in text
+    ), (
+        "expected the READ-ONLY tier to explicitly bypass the three-skill "
+        "convention requirement, not just exist as a label"
     )
 
 

@@ -62,6 +62,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `shared-mutable-per-entity` slug must warn that another skill may have overwritten them, and
   point at a live re-read instead of trusting the doc. `↺ no-restore-accepted-drift`'s definition in
   `eval-schema.md` extended to cover this category alongside `global-singleton`.
+- `reference/prompt-self-improving-skill-playbook.md`, `reference/self-improving-skills.md`,
+  `reference/eval-schema.md`, `workflows/skill-rollout.js`: replaced the "human sandbox-design
+  conversation" onboarding gate with the `create-testdata`/`reset-testdata`/`delete-testdata` skill
+  convention (issue #35). The old gate was never actually honored in practice — confirmed for
+  storyforge, the one plugin that went through onboarding: no documented human-Claude design
+  discussion exists anywhere in its skill-evals history, even though its `zz-sandbox-` convention was
+  treated as settled. Onboarding's step 3a now checks a concrete, three-part artifact instead of
+  trusting a conversation happened: (1) discovery — do all three fixed-name skills exist for this
+  plugin, (2) a static read of each SKILL.md confirming an unconditional `zz-sandbox-`-prefix
+  refuse-and-stop as its literal first step, (3) a live call to `delete-testdata` with a synthetic,
+  provably-nonexistent, non-prefixed slug, corrected from an earlier flawed proposal that risked the
+  verification attempt itself being the data loss if the guard was broken and the test slug happened
+  to resolve to something real. `create-testdata`/`reset-testdata`/`delete-testdata` are themselves
+  ordinary rollout targets, so `workflows/skill-rollout.js` gained a special-case Stage A
+  (`testdataSkillEvalAndEditPrompt`) for exactly those three skill names: a fixed check-exists →
+  delete (unconditionally) → create → reset sequence instead of the normal Prompt 1/2/3 flow,
+  avoiding the ordering problem where `create-testdata`'s own live case would collide with leftover
+  state from a prior rollout run. `delete-testdata` runs on every pass regardless of what the
+  existence check found — an earlier draft only ran it "if data exists", which meant a
+  freshly-cleaned sandbox could reach the end of the sequence with `delete-testdata`'s own Live
+  column marked done without the tool ever having been called once. Prefix stays `zz-sandbox-` (no migration for storyforge); a dedicated
+  test-DB/content-root approach is documented as a staged, not-yet-adopted Option B for plugins where
+  it proves feasible.
 
 ### Changed
 - Nothing yet

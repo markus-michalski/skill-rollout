@@ -186,6 +186,12 @@ function isValidPluginSlug(name) {
   return typeof name === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(name)
 }
 
+// The three fixed-name testdata-convention skills (issue #35) get a special-case Stage A instead of
+// the normal Prompt 1/2/3 flow — see testdataSkillEvalAndEditPrompt below for why: they're the
+// sandbox mechanism itself, and their own live cases would otherwise collide with leftover state
+// from prior rollout runs of other skills (or of each other).
+const TESTDATA_SKILL_NAMES = new Set(['create-testdata', 'reset-testdata', 'delete-testdata'])
+
 // Shared git-safety rule for EVERY commit to skillEvalsDir (issue #20). skillEvalsDir is a single
 // SHARED git repo across every rollout-target plugin (mm-skills, storyforge, ...) with NO isolation
 // mechanism — unlike pluginRepoPath, which preIsolated/EnterWorktree already protects. Two rollout
@@ -463,22 +469,26 @@ confirmed real behavior (not just their names), and that zero were write-capable
 classification is auditable, not asserted.
 
 **Hard gate, check this if the read-only bypass above did NOT apply:** if the plugin playbook states
-that this plugin's live-tier sandbox strategy has not been designed yet, do NOT attempt Prompt 3
-yourself, do NOT invent a sandbox strategy on the spot no matter how sensible it seems, and do NOT
-skip it silently either. This gate is about whether a verified-safe isolation strategy already
-exists for the plugin's shared storage — NOT about whether the plugin's subject matter sounds
-fictional or low-stakes. storyforge's own shared \`~/.storyforge/authors/\` holds a real,
-non-sandbox author (\`ethan-cole\`) right next to \`zz-sandbox-author\` — a "fictional domain" is not
-automatically safe, and a corrupted real chapter is just as real a loss as a corrupted real legal
-case. storyforge only qualifies because concrete design work already happened here (the
-\`zz-sandbox-\` naming convention, path-scoped resets, the isolated-files-vs-shared-DB distinction —
-see its own \`sandbox.md\` files), not because of its subject matter. Add an entry to
-\`needsHumanReview\` naming this skill and stating that its live tier is blocked pending a human
-sandbox-design conversation, mark the Live column 🟥 BLOCKED (not ⬜ — leaving it ⬜ is indistinguishable
-from "not attempted yet"; not N/A either — N/A means "verified not applicable", this is "applicable
-but blocked", a third, distinct state), and move on. This is exactly as hard a stop as the "would
-touch real non-sandbox data" condition later in this prompt — because it's the same risk, just
-caught earlier, before any sandbox even exists to accidentally misuse.
+that this plugin has not yet implemented and verified the \`create-testdata\`/\`reset-testdata\`/
+\`delete-testdata\` convention (per \`reference/prompt-self-improving-skill-playbook.md\` Phase 1 step
+3a's discovery+static+live checks — issue #35), do NOT attempt Prompt 3 yourself, do NOT invent a
+sandbox strategy on the spot no matter how sensible it seems, and do NOT skip it silently either.
+This gate is about whether that three-skill convention already exists and is verified-safe for the
+plugin's shared storage — NOT about whether the plugin's subject matter sounds fictional or
+low-stakes. storyforge's own shared \`~/.storyforge/authors/\` holds a real, non-sandbox author
+(\`ethan-cole\`) right next to \`zz-sandbox-author\` — a "fictional domain" is not automatically safe,
+and a corrupted real chapter is just as real a loss as a corrupted real legal case. storyforge only
+qualifies because the underlying design (the \`zz-sandbox-\` naming convention, path-scoped resets,
+the isolated-files-vs-shared-DB distinction — see its own \`sandbox.md\` files) is what the three-skill
+convention's \`create-testdata\`/\`reset-testdata\`/\`delete-testdata\` skills are expected to encode and
+enforce, not because of its subject matter. Add an entry to \`needsHumanReview\` naming this skill and
+stating that its live tier is blocked pending the three-skill convention being implemented (or fixed)
+for this plugin — point at the per-plugin GitHub issue if the playbook names one, this is a buildable
+engineering task, never an undefined "conversation" — mark the Live column 🟥 BLOCKED (not ⬜ — leaving
+it ⬜ is indistinguishable from "not attempted yet"; not N/A either — N/A means "verified not
+applicable", this is "applicable but blocked", a third, distinct state), and move on. This is exactly
+as hard a stop as the "would touch real non-sandbox data" condition later in this prompt — because
+it's the same risk, just caught earlier, before any sandbox even exists to accidentally misuse.
 
 **MCP Surface Register pre-check (issue #26/#27) — sandbox-exists path only, run this BEFORE any
 live case that writes anything.** Read \`${skillEvalsDir}/${pluginName}/mcp-surface-register.md\`.
@@ -576,6 +586,138 @@ Return the structured result: hasChanges, stoppedEarly/stopReason, evalScores (s
 needsHumanReview, issuesFiled (filed during Prompt 2/3 residual-note handling), worktreePath (per
 the isolation section above — only set when non-preIsolated and you actually called EnterWorktree),
 and a short prose summary of what you did.`
+}
+
+// Special-case Stage A for the three fixed-name testdata-convention skills (issue #35):
+// create-testdata/reset-testdata/delete-testdata. As ORDINARY skills in their target plugin they get
+// their own STATUS.md rows and would otherwise go through the normal Prompt 1/2/3 flow — but that
+// creates an ordering problem: create-testdata's own live case would very likely find test data
+// already left over from a prior rollout run of a DIFFERENT skill (or of one of its own two
+// siblings, since all three eventually get rolled out in the same batch/plugin), and a naive test
+// would either fail on an unexpected precondition or create duplicate fixtures. Fix: a fixed test
+// sequence (check exists -> delete if exists -> create -> reset) that exercises all three code paths
+// deterministically in one pass, regardless of which of the three is the CURRENT skill being rolled
+// out, and leaves the sandbox clean for every other skill's rollout afterward.
+function testdataSkillEvalAndEditPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, evalSchemaPath, referenceDir) {
+  return `You are Stage A (eval + edit) of a 3-stage unattended pipeline for ONE skill — but this run
+is the SPECIAL CASE for \`${skillName}\`, one of the three fixed-name testdata-convention skills
+(\`create-testdata\`/\`reset-testdata\`/\`delete-testdata\`, issue #35). Do NOT follow the normal
+Prompt 1/2/3 flow described in the plugin playbook for this skill — these three skills ARE the
+sandbox mechanism every other skill's live tier depends on, not an ordinary domain skill, and testing
+them the normal way creates an ordering problem: this skill's own live case would very likely find
+test data already left over from a PRIOR rollout run of a different skill (or of one of its two
+siblings), and a naive test would either fail on an unexpected precondition or create duplicate
+fixtures.
+
+Plugin: ${pluginName} (repo: ${pluginRepoPath})
+Skill: ${skillName}
+
+(Note: the doc paths below may contain spaces — quote them in any shell command.)
+
+Background on why this convention exists and what each of the three skills must guarantee (the
+Hard Safety Rule, the \`zz-sandbox-\` prefix decision, idempotency requirement):
+${referenceDir || '(referenceDir not provided — see the warning already logged for this run)'}/self-improving-skills.md's
+"create-testdata / reset-testdata / delete-testdata Convention" section — read it if anything below
+is ambiguous, do not re-derive the convention from first principles.
+
+${isolationSection(pluginRepoPath, skillName, skillEvalsDir, preIsolated, 'create', null)}
+
+## The fixed test sequence — run this instead of Prompt 1/2/3, regardless of which of the three
+## skills is the one actually being rolled out right now
+
+Run all three skills' real behavior, in this exact order, discovering each via ToolSearch/Skill
+invocation if not already loaded — never simulate any of these calls, every step below needs a real
+\`tool_use\`/Skill-invocation as evidence, same evidentiary rigor as any other live-tier case in this
+rollout:
+
+1. **Check whether test data already exists.** Use whichever read/lookup path this plugin's own
+   sandbox convention provides (per ${skillEvalsDir}/${pluginName}/mcp-surface-register.md's Fixture
+   Inventory table if populated, or the target plugin's own \`create-testdata\`/\`reset-testdata\`
+   SKILL.md for how existence is checked) to determine if \`zz-sandbox-\`-prefixed test entities are
+   already present from a prior rollout run. This does NOT decide whether step 2 runs — it only sets
+   which of step 2's two valid outcomes you expect to see.
+2. **Run \`delete-testdata\`, UNCONDITIONALLY, regardless of what step 1 found.** This is this skill's
+   own live case whenever \`${skillName}\` is \`delete-testdata\` — it must actually execute every
+   single pass, never be skipped because the sandbox happened to start empty. An earlier version of
+   this sequence only ran \`delete-testdata\` "if test data already exists", which meant a
+   freshly-cleaned sandbox could reach the end of this sequence having marked \`delete-testdata\`'s
+   Live column ✅ without the tool ever having been called once — a false pass, exactly the failure
+   class this whole convention exists to prevent. Two valid outcomes, matching what step 1 found:
+   - **Step 1 found existing test data:** confirm via an independent post-call read that it is now
+     actually gone.
+   - **Step 1 found nothing (fresh/empty sandbox):** confirm the call recognizes "nothing to delete"
+     and proceeds without erroring — **\`delete-testdata\` must be idempotent/no-op-safe on an empty
+     sandbox**; if it errors instead, that is itself a real bug to fix in this skill (same as any
+     other Prompt-2-style fix), not something to route around by skipping the call.
+   This step also serves as setup for step 3 below (guaranteeing a known-clean starting point before
+   \`create-testdata\` runs) whenever \`${skillName}\` is one of the OTHER two skills — one
+   unconditional call covers both purposes, there is no separate "setup-only" invocation.
+3. **Run \`create-testdata\`.** Confirm via an independent post-call read that the entities it claims
+   to have created actually exist, \`zz-sandbox-\`-prefixed, via the plugin's own real creation tools
+   (never hand-written files) — record the returned slugs/IDs.
+4. **Run \`reset-testdata\`.** Mutate one of the just-created entities' fields first (a trivial,
+   reversible change, so there is something real to reset), then call \`reset-testdata\` and confirm
+   via an independent post-call read that the entity is back at its documented baseline state AND
+   still exists (reset must never delete — that would make it indistinguishable from
+   \`delete-testdata\`, defeating the whole point of having two separate skills).
+
+This exercises all three code paths deterministically in a single pass and leaves the sandbox in a
+clean, known-good state for every other skill's rollout to use afterward — regardless of which ONE of
+the three skills \`${skillName}\` happens to be, running the full sequence is what actually tests it,
+since each skill's correctness depends on the other two behaving correctly around it (you cannot
+meaningfully test \`reset-testdata\` without a working \`create-testdata\` first, and you cannot safely
+re-run \`create-testdata\` without a working \`delete-testdata\` to clear prior leftovers first).
+
+## Grading this skill
+
+Treat step 2 above (which always ran, per the fix to the ordering problem described there) as this
+skill's own live case if \`${skillName}\` is \`delete-testdata\`; step 3 if \`${skillName}\` is
+\`create-testdata\`; step 4 if \`${skillName}\` is \`reset-testdata\`. Grade that step's specific
+behavior adversarially — same methodology as any other
+live case (${evalSchemaPath}): did it actually call the plugin's real tools (not narrate), did the
+claimed side effect actually happen per an independent read, did the \`zz-sandbox-\`-prefix refuse
+guard get exercised correctly. If this skill's SKILL.md needs a fix as a result (e.g. the idempotency
+requirement in step 2 was violated, or the prefix guard didn't fire before the underlying operation),
+propose and make ONE change, same content-capture-before-edit / keep-if-improved-else-restore
+discipline as Prompt 2 in the plugin playbook — capture the file's exact content via a plain Read
+before the edit, re-run the relevant step of the sequence above to re-verify, keep or restore based on
+whether the specific defect is now fixed (there is no numeric pass-rate score here the way evals.json
+produces one — "keep" means the sequence step this skill owns now behaves correctly per the check
+above, "discard" means it doesn't and the content-based restore applies).
+
+Do NOT create an evals.json or run a simulated-tier grading loop for this skill — the fixed sequence
+above IS this skill's test, both simulated-equivalent (does the logic make sense) and live (did the
+real tool calls behave correctly) collapse into the one sequence for these three special-case skills.
+Mark this skill's Simulated column ✅ with a one-line note "tested via the create/reset/delete fixed
+sequence, no evals.json (issue #35 special case)" instead of a pass/total score, and its Live column
+✅ the same way, once the sequence above has run clean for this skill's own step.
+
+${skillEvalsGitSafety(skillEvalsDir, pluginName)}
+
+## Stage boundary — stop here, do NOT commit the ${pluginRepoPath} diff
+
+Same boundary as the normal pipeline: an independent reviewer sees your ${pluginRepoPath} diff next
+(if this skill's own fix touched its SKILL.md); you never commit, push, or open a PR for it yourself.
+If you made no SKILL.md changes (the sequence ran clean, nothing needed fixing): set \`hasChanges:
+false\` and do NOT run \`git add\`. Otherwise: \`git add -A\`, do NOT \`git commit\`.
+
+## Stop-and-flag conditions
+
+Add an entry to \`needsHumanReview\` if:
+- \`delete-testdata\` is NOT idempotent/no-op-safe on an empty sandbox and you could not fix it in one
+  targeted change.
+- Any step's \`zz-sandbox-\`-prefix refuse guard did not fire correctly when it should have — this is a
+  genuine safety defect in the sandbox mechanism itself, not a normal eval-loop finding; flag it
+  loudly and do NOT let this plugin's other skills' Live columns be treated as unblocked until it's
+  fixed.
+- Ambiguity about whether any step in the sequence touched real (non-\`zz-sandbox-\`) data.
+
+## Return value
+
+Return the structured result: hasChanges, stoppedEarly/stopReason, evalScores (simulatedScore/
+liveScore as the fixed-sequence note described above, not a pass/total), needsHumanReview,
+issuesFiled, worktreePath, and a short prose summary of the sequence run and this skill's own step's
+outcome.`
 }
 
 function reviewPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, worktreePath) {
@@ -1029,10 +1171,15 @@ for (const skill of skillsToProcess) {
   const doneNote = skill.simulatedDone && !skill.liveDone ? ' (live tier only — simulated already done)' : ''
   log(`Starting ${skill.name} (${positionLabel})${doneNote}...`)
 
-  // Stage A — eval + edit, stage changes but do not commit.
+  // Stage A — eval + edit, stage changes but do not commit. The three testdata-convention skills
+  // (issue #35) get the fixed-sequence special case instead of the normal Prompt 1/2/3 prompt.
+  const isTestdataSkill = TESTDATA_SKILL_NAMES.has(skill.name)
+  const stageAPrompt = isTestdataSkill
+    ? testdataSkillEvalAndEditPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, evalSchemaPath, referenceDir)
+    : evalAndEditPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, evalSchemaPath, referenceDir)
   let editResult
   try {
-    editResult = await agent(evalAndEditPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, evalSchemaPath, referenceDir), {
+    editResult = await agent(stageAPrompt, {
       label: `eval:${skill.name}`,
       phase: 'Rollout',
       schema: EDIT_RESULT_SCHEMA,
