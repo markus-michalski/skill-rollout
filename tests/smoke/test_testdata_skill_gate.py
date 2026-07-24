@@ -139,13 +139,19 @@ def test_onboard_playbook_explains_why_original_check_was_flawed():
     assert (
         "the verification attempt itself would have been the data loss, the "
         "test and the damage the same event" in text
-    ), "expected the flaw in the original (non-synthetic-slug) proposal to be documented"
+    ), (
+        "expected the flaw in the original (non-synthetic-slug) proposal to "
+        "be documented"
+    )
 
 
 def test_onboard_playbook_unblock_path_is_buildable_not_a_conversation():
     text = _onboard_text()
     assert "buildable unblock path instead of an undefined" in text
-    assert "file a per-plugin GitHub issue for this if one does not already exist" in text
+    assert (
+        "file a per-plugin GitHub issue for this if one does not already exist"
+        in text
+    )
 
 
 def test_onboard_playbook_prompt3_outcomes_reference_three_checks():
@@ -203,7 +209,7 @@ def test_self_improving_skills_documents_staged_option_a_and_b():
     assert "Option B (stärker, größerer Scope" in text
 
 
-def test_self_improving_skills_hand_designed_material_reframed_as_implementation_guidance():
+def test_self_improving_skills_hand_designed_material_reframed():
     """Issue #35's explicit ask: the pre-existing git-tag-baseline /
     isolated-vs-shared-storage material must become implementation guidance
     FOR the three skills, not something onboarding itself designs."""
@@ -222,7 +228,8 @@ def test_self_improving_skills_notes_testdata_skills_are_rollout_targets():
 
 def test_eval_schema_blocked_tier_names_three_skill_convention():
     text = _eval_schema_text()
-    assert "create-testdata" in text and "reset-testdata" in text and "delete-testdata" in text
+    for name in ("create-testdata", "reset-testdata", "delete-testdata"):
+        assert name in text
     assert "checkable artifact, not a design conversation" in text
 
 
@@ -303,7 +310,10 @@ def test_workflow_js_requires_delete_testdata_idempotent_on_empty_sandbox():
 
 def test_workflow_js_testdata_special_case_skips_evals_json():
     text = _workflow_text()
-    assert "Do NOT create an evals.json or run a simulated-tier grading loop for this skill" in text
+    assert (
+        "Do NOT create an evals.json or run a simulated-tier grading loop "
+        "for this skill" in text
+    )
 
 
 def test_workflow_js_hard_gate_points_at_three_skill_convention_not_conversation():
