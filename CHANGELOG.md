@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- write the `## Batch started` batch-digest.md header on a plugin's first-ever onboarding run too, not only when STATUS.md already exists — previously batch-digest.md didn't exist at all until the first selected skill finished, leaving a first onboarding run indistinguishable from a silent stall (#40)
 
 ### Security
 - Nothing yet

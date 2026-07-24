@@ -192,6 +192,26 @@ function isValidPluginSlug(name) {
 // from prior rollout runs of other skills (or of each other).
 const TESTDATA_SKILL_NAMES = new Set(['create-testdata', 'reset-testdata', 'delete-testdata'])
 
+// Shared "## Batch started" batch-digest.md header-write instruction (issue #40). Interpolated at
+// BOTH points in this script that can be the first one to know a batch's selected skills: the
+// Select phase's "STATUS.md already exists" branch, and the post-onboarding reselect step (which
+// exists specifically because the Select phase skips this write when onboardingNeeded=true — at
+// that point it has no selected skills yet, having returned an empty array). One shared function —
+// same precedent as skillEvalsGitSafety below — is what stops the two call sites from drifting apart
+// on the data contract (date/time, count, skill list) or the append-only/do-not-commit-here
+// convention, instead of relying on someone remembering to edit both copies identically.
+function batchDigestHeaderInstruction(skillEvalsDir, pluginName, count) {
+  return `Once you know the selected skills: append (create if missing, never overwrite existing content —
+same convention as loop-log.md) a "## Batch started" header to
+${skillEvalsDir}/${pluginName}/batch-digest.md with the real current date/time (via \`date\`),
+the requested count (${count}), and the list of skills selected for this batch. This is the file
+each skill's own rollout will append its result to as it finishes — the header marks where this
+batch's entries begin, so a human tailing the file mid-run can tell batches apart. **Do NOT commit
+this write yourself** — leave it uncommitted in the working tree; the first selected skill's own
+Stage C bookkeeping commit (scoped to \`${skillEvalsDir}/${pluginName}/\`) picks it up naturally as
+part of its normal commit, without this stage needing its own git-safety cycle.`
+}
+
 // Shared git-safety rule for EVERY commit to skillEvalsDir (issue #20). skillEvalsDir is a single
 // SHARED git repo across every rollout-target plugin (mm-skills, storyforge, ...) with NO isolation
 // mechanism — unlike pluginRepoPath, which preIsolated/EnterWorktree already protects. Two rollout
@@ -1046,15 +1066,12 @@ table's current row order (this is the plugin's own dependency/pipeline order, n
 do not re-sort it), that are not yet fully done. A skill with Simulated ✅ but Live ⬜ counts as
 not-done and should be included (to finish its live tier), not skipped in favor of a fresh skill.
 
-Once you know the selected skills: append (create if missing, never overwrite existing content —
-same convention as loop-log.md) a "## Batch started" header to
-${skillEvalsDir}/${plugin}/batch-digest.md with the real current date/time (via \`date\`),
-the requested count (${count}), and the list of skills selected for this batch. This is the file
-each skill's own rollout will append its result to as it finishes — the header marks where this
-batch's entries begin, so a human tailing the file mid-run can tell batches apart. **Do NOT commit
-this write yourself** — leave it uncommitted in the working tree; the first selected skill's own
-Stage C bookkeeping commit (scoped to \`${skillEvalsDir}/${plugin}/\`) picks it up naturally as part
-of its normal commit, without this stage needing its own git-safety cycle.`,
+${batchDigestHeaderInstruction(skillEvalsDir, plugin, count)}
+
+If onboardingNeeded is true: skip this header write entirely — you returned an empty skills array
+above, so there is nothing selected yet. The post-onboarding reselect step (a separate agent call
+run after onboarding finishes) owns writing this header in that case instead; writing it here too
+would just leave two "## Batch started" sections for the same batch.`,
   { schema: SELECTION_SCHEMA, phase: 'Select' }
 )
 
@@ -1137,12 +1154,33 @@ different scope) so it's still consistently distinguishable from a per-skill PR 
   log(`Onboarding for ${plugin} complete — selecting skills for this batch...`)
   const reselect = await agent(
     `Onboarding for "${plugin}" (repo: ${pluginRepoPath}) just completed. Read the newly-created
-${skillEvalsDir}/${plugin}/STATUS.md and return the first ${count} skills in table order
-(all should be ⬜/⬜ at this point, since this is a fresh onboarding). Also re-verify
-pluginRepoPathExists the same way as before.`,
+${skillEvalsDir}/${plugin}/STATUS.md and return the first ${count} skills in table order. Every row
+should be ⬜/⬜ on a fresh onboarding, but don't assume — apply the same "fully done" rule as the
+Select phase above (Simulated ✅ AND Live ✅ or verified 🟦 N/A, per ${evalSchemaPath}'s convention)
+rather than blindly taking the first ${count} rows, in case the onboarding playbook pre-marked any
+row N/A. Also re-verify pluginRepoPathExists the same way as before.
+
+${batchDigestHeaderInstruction(skillEvalsDir, plugin, count)}
+
+This is the SAME header write the Select phase above would have done if STATUS.md had already
+existed — it was skipped there only because onboarding needed to run first (issue #40 — until this
+write, ${skillEvalsDir}/${plugin}/ had no batch-digest.md at all, and an operator watching a
+first-ever onboarding run had nothing to distinguish "still onboarding" from "silently stopped" once
+onboarding itself finished).`,
     { schema: SELECTION_SCHEMA, phase: 'Select' }
   )
+
+  if (!reselect.pluginRepoPathExists) {
+    return {
+      batchSummary: `Aborted: "${pluginRepoPath}" could not be confirmed to exist as a directory for plugin "${plugin}" right after onboarding completed — even though onboarding itself just succeeded. Not proceeding on an unverified path. Details: ${batchNotes.join(' | ')}`,
+      totalPRs: [], totalIssues: [], totalNeedsHumanReview: onboardResult.needsHumanReview ?? [],
+    }
+  }
+
   skillsToProcess = Array.isArray(reselect.skills) ? reselect.skills : []
+  if (!Array.isArray(reselect.skills)) {
+    batchNotes.push('Post-onboarding reselect phase returned a non-array `skills` field — treated as empty, investigate the reselect agent output.')
+  }
 }
 
 // Dedupe by name in case the Select agent returned a skill twice (code review L5).
