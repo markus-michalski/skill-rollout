@@ -1072,7 +1072,7 @@ if (!Array.isArray(selection.skills)) {
 
 if (selection.onboardingNeeded) {
   phase('Onboard')
-  log(`No skill-evals setup found for ${plugin} — running onboarding first.`)
+  log(`No skill-evals setup found for ${plugin} — starting onboarding (one-time, can take several minutes)...`)
   const onboardResult = await agent(
     `Run the onboarding meta-prompt for plugin "${plugin}" at repo path ${pluginRepoPath}, exactly as
 documented in ${onboardPlaybookPath}
@@ -1134,6 +1134,7 @@ different scope) so it's still consistently distinguishable from a per-skill PR 
     }
   }
 
+  log(`Onboarding for ${plugin} complete — selecting skills for this batch...`)
   const reselect = await agent(
     `Onboarding for "${plugin}" (repo: ${pluginRepoPath}) just completed. Read the newly-created
 ${skillEvalsDir}/${plugin}/STATUS.md and return the first ${count} skills in table order
@@ -1169,7 +1170,7 @@ const FAILURE_CIRCUIT_BREAKER = 3 // stop the batch if this many skills in a row
 for (const skill of skillsToProcess) {
   const positionLabel = `${results.length + 1}/${skillsToProcess.length}`
   const doneNote = skill.simulatedDone && !skill.liveDone ? ' (live tier only — simulated already done)' : ''
-  log(`Starting ${skill.name} (${positionLabel})${doneNote}...`)
+  log(`${skill.name} (${positionLabel}): evaluation running${doneNote}...`)
 
   // Stage A — eval + edit, stage changes but do not commit. The three testdata-convention skills
   // (issue #35) get the fixed-sequence special case instead of the normal Prompt 1/2/3 prompt.
@@ -1204,6 +1205,7 @@ for (const skill of skillsToProcess) {
   let reviewResult = { findings: [], summary: 'Skipped — Stage A reported no changes or stopped early, nothing to review.' }
   let reviewFailed = false
   if (editResult.hasChanges && !editResult.stoppedEarly) {
+    log(`${skill.name} (${positionLabel}): independent review running...`)
     try {
       reviewResult = await agent(reviewPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, editResult.worktreePath), {
         label: `review:${skill.name}`,
@@ -1224,6 +1226,7 @@ for (const skill of skillsToProcess) {
   // Stage C — apply review findings (if any), commit + push + PR, bookkeeping. Always runs, even
   // on a Stage A early-exit, so the loop-log/STATUS.md/batch-digest bookkeeping is never skipped.
   let result
+  log(`${skill.name} (${positionLabel}): ${editResult.hasChanges && !editResult.stoppedEarly ? 'committing + opening PR' : 'bookkeeping'}...`)
   try {
     result = await agent(
       commitPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, editResult.worktreePath, editResult, reviewResult, reviewFailed, evalSchemaPath),
@@ -1256,7 +1259,7 @@ for (const skill of skillsToProcess) {
   if (!result.liveScore && editResult.evalScores) result.liveScore = editResult.evalScores.liveScore
 
   results.push(result)
-  log(`${skill.name}: ${result.summary}`)
+  log(`${skill.name} (${positionLabel}): done — ${result.summary}`)
 
   if (result.stoppedEarly) {
     consecutiveFailures += 1

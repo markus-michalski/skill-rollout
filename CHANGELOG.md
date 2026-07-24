@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Nothing yet
+- high-level `log()` heartbeats at phase transitions during autonomous batch runs (onboarding start/end, per-skill eval/review/commit stages) so an operator can tell "still running" from "silently stopped" (#39)
 
 ### Changed
 - Nothing yet
