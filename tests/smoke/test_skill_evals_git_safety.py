@@ -159,18 +159,67 @@ def test_skill_evals_git_safety_used_in_onboard_phase():
     )
 
 
+def test_batch_digest_header_helper_defined_once():
+    """The '## Batch started' header-write instruction (issue #40) must be a
+    single shared function, not copy-pasted per call site (Select phase +
+    post-onboarding reselect step) — copy-paste invites the two copies
+    drifting apart over time, same rationale as skillEvalsGitSafety above."""
+    src = _workflow_raw()
+    definitions = re.findall(r"function batchDigestHeaderInstruction\(", src)
+    assert len(definitions) == 1, (
+        "expected exactly one batchDigestHeaderInstruction definition, "
+        f"found {len(definitions)}"
+    )
+
+
+def _batch_digest_header_helper_source():
+    """Slice just batchDigestHeaderInstruction's own function body, so a
+    test can't accidentally pass by matching some OTHER batch-digest.md
+    mention in the file."""
+    src = _workflow_raw()
+    return _normalize(_slice(src, "function batchDigestHeaderInstruction(", "\n}\n"))
+
+
 def test_select_phase_explicitly_defers_batch_digest_commit_to_stage_c():
     """Regression guard for a code-review HIGH finding: the Select phase
     writes batch-digest.md's opening header but was given NO git-safety
     guidance at all in the first draft — not even a "don't commit here."
     An autonomous agent with no instruction could reasonably decide to
     "tidy up" with an unscoped commit. The fix is an explicit opt-out, not
-    a full commit cycle (the first skill's Stage C commit picks it up)."""
+    a full commit cycle (the first skill's Stage C commit picks it up).
+
+    The "don't commit here" text itself now lives inside the shared
+    batchDigestHeaderInstruction(...) helper (issue #40) rather than being
+    copy-pasted into the Select phase's own prompt text — so this guards
+    two things: the Select phase actually CALLS the helper, and the
+    helper's own body still contains the deferral text (same two-part
+    pattern already used above for skillEvalsGitSafety)."""
     src = _workflow_raw()
-    section = _normalize(_slice(src, "phase('Select')", "phase('Onboard')"))
-    assert "Do NOT commit this write yourself" in section, (
-        "expected the Select phase to explicitly defer the batch-digest.md "
-        "commit to the first selected skill's Stage C"
+    select_section = _normalize(_slice(src, "phase('Select')", "phase('Onboard')"))
+    assert "batchDigestHeaderInstruction(" in select_section, (
+        "expected the Select phase to call the shared "
+        "batchDigestHeaderInstruction(...) helper"
+    )
+    assert (
+        "Do NOT commit this write yourself" in _batch_digest_header_helper_source()
+    ), (
+        "expected batchDigestHeaderInstruction(...) to explicitly defer the "
+        "batch-digest.md commit to the first selected skill's Stage C"
+    )
+
+
+def test_reselect_step_also_uses_batch_digest_header_helper():
+    """Regression guard for issue #40: on a plugin's first-ever onboarding
+    run, the Select phase returns an empty skills array and skips the
+    batch-digest.md header write (nothing selected yet). Without this, the
+    post-onboarding reselect step must write it instead, or batch-digest.md
+    doesn't exist on disk until the first selected skill finishes — making
+    a first onboarding run indistinguishable from a silent stall."""
+    src = _workflow_raw()
+    onboard_section = _normalize(_slice(src, "phase('Onboard')", "phase('Rollout')"))
+    assert "batchDigestHeaderInstruction(" in onboard_section, (
+        "expected the post-onboarding reselect step to call the shared "
+        "batchDigestHeaderInstruction(...) helper too, not only the Select phase"
     )
 
 
