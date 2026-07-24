@@ -32,7 +32,7 @@ def test_live_pr_verification_step_present():
 
 
 def test_live_check_does_not_compromise_read_only_contract():
-    """"Do not modify any files" must survive as a BLANKET prohibition — a
+    """ "Do not modify any files" must survive as a BLANKET prohibition — a
     code-review fix (issue #18) widened an earlier draft's narrower "do not
     modify STATUS.md or batch-digest.md" back to this, since enumerating two
     files reads as implicit permission to modify everything else."""

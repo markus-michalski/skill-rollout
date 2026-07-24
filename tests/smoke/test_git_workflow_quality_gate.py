@@ -76,9 +76,7 @@ def _stage_c_source():
 
 
 def _rollout_loop_source():
-    return _normalize(
-        _slice_between(_source(), "phase('Rollout')", "phase('Digest')")
-    )
+    return _normalize(_slice_between(_source(), "phase('Rollout')", "phase('Digest')"))
 
 
 def test_review_stage_uses_a_real_independent_reviewer_agenttype():
@@ -163,8 +161,13 @@ def test_stage_b_mandates_concrete_review_criteria():
     review step must list explicit, concrete categories to check — not just
     say 'do a review' and let the agent decide what that means."""
     section = _stage_b_source()
-    for category in ("Logic/correctness", "SKILL.md structural compliance",
-                     "Eval design quality", "Data hygiene", "Cross-file consistency"):
+    for category in (
+        "Logic/correctness",
+        "SKILL.md structural compliance",
+        "Eval design quality",
+        "Data hygiene",
+        "Cross-file consistency",
+    ):
         assert category in section, (
             f"Stage B's prompt must list '{category}' as an explicit category "
             "to check — vague 'do a review' instructions reproduce the "
@@ -290,8 +293,13 @@ def test_stage_c_falls_back_to_manual_review_if_stage_b_failed():
     )
     # The fallback path must reuse the same five review categories as Stage B,
     # not a watered-down ad hoc check.
-    for category in ("Logic/correctness", "SKILL.md structural compliance",
-                     "Eval design quality", "Data hygiene", "Cross-file consistency"):
+    for category in (
+        "Logic/correctness",
+        "SKILL.md structural compliance",
+        "Eval design quality",
+        "Data hygiene",
+        "Cross-file consistency",
+    ):
         assert category in section, (
             f"Stage C's manual-review fallback must cover '{category}', same "
             "as Stage B's own criteria"
@@ -306,7 +314,7 @@ def test_rollout_loop_tracks_review_failure_and_passes_it_to_stage_c():
     commit_call_idx = loop.find("commitPrompt(")
     args_marker = loop.find("editResult, reviewResult, reviewFailed")
     commit_call_end = loop.find(")", args_marker)
-    assert "reviewFailed" in loop[commit_call_idx:commit_call_end + 1], (
+    assert "reviewFailed" in loop[commit_call_idx : commit_call_end + 1], (
         "expected the commitPrompt(...) call to pass reviewFailed through"
     )
 

@@ -1,0 +1,123 @@
+name: Bug Report
+description: Report something that isn't working correctly
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue. Fill out the sections below so this can be reproduced and fixed.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: What part of the plugin is affected?
+      options:
+        - Skill (slash command)
+        - MCP Server / MCP Tool
+        - Workflow Script (workflows/skill-rollout.js)
+        - Eval Schema / STATUS.md logic
+        - Sandbox Gate / Tier Classification
+        - Configuration / Setup
+        - CI / GitHub Actions
+    validations:
+      required: true
+
+  - type: dropdown
+    id: skill
+    attributes:
+      label: Which skill? (if applicable)
+      description: If this involves a specific skill, which one?
+      options:
+        - /skill-rollout:run
+        - /skill-rollout:status
+        - /skill-rollout:configure
+        - /skill-rollout:setup
+        - /skill-rollout:help
+        - N/A
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description of the issue
+      placeholder: The run skill reported a skill as BLOCKED even though it only uses read-only MCP tools...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+      placeholder: The skill should have been classified as READ-ONLY and run Prompt 3 directly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can this be reproduced?
+      placeholder: |
+        1. Run /skill-rollout:run mm-skills 1
+        2. Observe skill X being classified as BLOCKED
+        3. Check skill's MCP calls — all are read-only (list_*, get_*)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue type
+      description: What kind of problem is this?
+      options:
+        - Claude ignored instructions in CLAUDE.md or SKILL.md
+        - Skill instructions are unclear or wrong
+        - Workflow script (JS) logic error
+        - Tier classification wrong (READ-ONLY / BLOCKED / N/A)
+        - MCP tool crashes or returns wrong data
+        - Sandbox gate misbehaves
+        - Configuration doesn't load or resolve paths
+        - CI pipeline fails unexpectedly
+        - Documentation is incorrect or outdated
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Version from `.claude-plugin/plugin.json` or `git rev-parse --short HEAD`
+      placeholder: 1.0.3 or 2afb5fc
+    validations:
+      required: false
+
+  - type: input
+    id: target-plugin
+    attributes:
+      label: Target plugin (if applicable)
+      description: Which plugin was being rolled out when the bug occurred?
+      placeholder: mm-skills, storyforge, ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or conversation excerpts
+      description: Paste any error messages or relevant Claude conversation
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Any other context, STATUS.md excerpts, or files that might help
+    validations:
+      required: false

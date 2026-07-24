@@ -59,6 +59,33 @@ a contributor must not break.
   it never silently commits an unreviewed diff. Still, enable `git-pr-workflows`
   for full review quality on a rollout batch.
 
+## PR and Issue Conventions
+
+### Branch Naming
+`feat/`, `fix/`, `docs/`, `chore/`, `refactor/` — always short-lived, branched from `main`.
+
+### Commit Format (Conventional Commits, enforced via `pr-title.yml`)
+```
+<type>(<scope>): <subject>          # subject ≤ 72 chars
+```
+Common scopes: `run`, `status`, `configure`, `setup`, `help`, `workflow`, `eval-schema`, `tier`, `mcp`, `deps`, `ci`.
+
+### PR Title
+Same format as commit — enforced by the `amannn/action-semantic-pull-request` action.
+Pattern: `feat(run): add --resume flag` / `fix(tier): ...` / `docs(contributing): ...`
+
+### Issue Titles
+Use the GitHub Issue Templates — they inject the correct prefix automatically:
+- Bug: `[Bug]: <short description>`
+- Feature: `[Feature]: <short description>`
+
+Do NOT create blank issues (disabled via `config.yml`).
+
+### Co-Author Line (when Claude Code assisted)
+```
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+```
+
 ## Layout
 
 ```
