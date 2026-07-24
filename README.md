@@ -22,6 +22,19 @@ per-plugin eval state is queryable over MCP.
 - **Queryable state** — an MCP server exposes config resolution and the running
   batch digest / per-skill loop state, so progress is visible mid-run.
 
+## Prerequisites
+
+**Claude Code's Auto Mode must be ON before invoking `/skill-rollout:run`.** Without it, every
+routine Bash/MCP tool call inside the batch — including ones made by subagents running unattended,
+away from the keyboard — prompts for individual approval, which defeats the entire point of an
+unattended batch runner. This is not a skill-rollout-specific setting; it's the session-wide Claude
+Code mode that suppresses confirmation prompts for reversible, expected actions.
+
+Confirmed gotcha: entering **Plan Mode** during a session silently turns Auto Mode off as a side
+effect. If a batch that previously ran unattended suddenly starts prompting for approvals again,
+check whether Auto Mode got switched off this way before assuming something is wrong with the
+plugin — turn it back on and the batch resumes running without prompts.
+
 ## Status
 
 Functionally complete and in active use (tested end-to-end against a real target plugin).
