@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- high-level `log()` heartbeats at phase transitions during autonomous batch runs (onboarding start/end, per-skill eval/review/commit stages) so an operator can tell "still running" from "silently stopped" (#39)
+- Nothing yet
 
 ### Changed
 - Nothing yet
@@ -20,10 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- write the `## Batch started` batch-digest.md header on a plugin's first-ever onboarding run too, not only when STATUS.md already exists — previously batch-digest.md didn't exist at all until the first selected skill finished, leaving a first onboarding run indistinguishable from a silent stall (#40)
+- Nothing yet
 
 ### Security
 - Nothing yet
+
+## [1.2.0] - 2026-07-24
+
+### Added
+- add chat heartbeats for batch phase transitions (#39) (#41)
+
+### Fixed
+- write batch-digest header during first-ever onboarding run (#42)
 
 ## [1.1.1] - 2026-07-24
 
@@ -91,3 +99,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.3]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.0.3
 [1.1.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.1.0
 [1.1.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.1.1
+[1.2.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.2.0
