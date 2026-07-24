@@ -130,6 +130,25 @@ don't infer from any other plugin you may have worked on before)
    global-singleton tools, which sandbox fixture states already exist). If it doesn't exist yet,
    Phase 2 below must create it with an empty table skeleton — do not defer this to the first
    skill rollout, since the whole point is that it exists before any skill needs it.
+3c. **Only if 3a's outcome was "all three checks pass":** provision the sandbox for real now, don't
+   leave it empty for whichever skill happens to be selected first to improvise (skill-rollout
+   issue #37). Step 3a's live verification only ever tests the refuse path — a synthetic,
+   provably-nonexistent slug against `delete-testdata` — it never actually creates anything. This
+   step is the real provisioning run:
+   1. Call `create-testdata` for real (no synthetic slug involved this time — a genuine,
+      unconditional invocation), exactly as this plugin's own `create-testdata/SKILL.md` documents.
+      If it reports the sandbox already exists (e.g. re-onboarding after a partial prior attempt),
+      that is a valid outcome too — do not treat "already provisioned" as a failure.
+   2. Confirm via an independent read (a real get/list tool call, never trusting `create-testdata`'s
+      own return value as the only evidence) that the fixtures it claims to have created actually
+      exist.
+   3. Record what was created — the exact fixed identifiers `create-testdata`'s own SKILL.md
+      documents (per this plugin's implementation) — in the `mcp-surface-register.md` file from step
+      3b's Fixture Inventory table, so every future skill's live tier finds the sandbox pre-seeded
+      and consistent instead of rediscovering or re-provisioning it.
+   If `create-testdata` itself fails for a reason unrelated to "already exists" (a real tool error,
+   an unexpected response shape): do not proceed to Prompt 3 as if the sandbox were ready — add a
+   `needsHumanReview` entry naming the concrete failure, same treatment as a failed step 3a check.
 4. **Plugin-type repos:** confirm "skills" in plugin.json ships a directory verbatim to installers
    (true for essentially all Claude plugins). **Flat-collection repos:** confirm each skill directory
    is installed by copy or symlink per the repo's own CLAUDE.md/README (mm-skills documents this in
@@ -204,10 +223,14 @@ each playbook's facts are specific to its own repo.
   every skill's Live column starts as 🟦 N/A (no MCP server exists for the whole repo, per step 3) —
   set that immediately rather than leaving it ⬜ for a live tier that will never apply.
 - **MCP Surface Register (only if step 3b found it missing):** create
-  {skillEvalsDir}/{plugin-name}/mcp-surface-register.md now, with the two empty table skeletons
-  (MCP Tool Scope; Fixture Inventory) per {referenceDir}/self-improving-skills.md's "MCP Surface
-  Register" section — do not pre-populate rows from a guess, leave it genuinely empty for the first
-  skill rollout to fill in from real findings.
+  {skillEvalsDir}/{plugin-name}/mcp-surface-register.md now, with the two table skeletons (MCP Tool
+  Scope; Fixture Inventory) per {referenceDir}/self-improving-skills.md's "MCP Surface Register"
+  section. The MCP Tool Scope table starts genuinely empty — do not pre-populate rows from a guess,
+  leave it for the first skill rollout to fill in from real findings. The Fixture Inventory table is
+  different: if step 3c ran a real `create-testdata` provisioning pass, record what it actually
+  created there now (the fixed identifiers, per this plugin's own `create-testdata/SKILL.md`) —
+  this table should NOT start empty when 3c succeeded, since the whole point of 3c is that the next
+  skill's rollout finds the sandbox already documented, not empty.
 - **Prompt 1** (evals.json bauen, simulierter Tier): same shape as {referenceDir}/self-improving-skills.md's
   example, referencing the skill-rollout plugin's reference/eval-schema.md (this is the correct target
   location to write into the NEW playbook's text — never the {skillEvalsDir}/schema.md path, which

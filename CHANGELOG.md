@@ -8,7 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Nothing yet
+- `reference/prompt-self-improving-skill-playbook.md`, `reference/self-improving-skills.md`: new
+  onboarding step 3c — after the create-testdata/reset-testdata/delete-testdata discovery, static,
+  and live-verification checks all pass, actually run `create-testdata` for real (not the synthetic
+  safety-check call from step 3a) and record what it created in `mcp-surface-register.md`'s Fixture
+  Inventory. Closes issue #37: the live verification alone only ever tests the refuse path against a
+  synthetic slug, it never provisions anything — without this step, a newly-onboarded plugin's
+  sandbox stayed empty, leaving whichever skill got selected first to improvise fixture creation via
+  the older, more generic PR #30 fixture-completeness pre-check instead of the canonical
+  `create-testdata` path.
 
 ### Changed
 - Nothing yet
