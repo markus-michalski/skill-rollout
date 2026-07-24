@@ -8,15 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `reference/prompt-self-improving-skill-playbook.md`, `reference/self-improving-skills.md`: new
-  onboarding step 3c — after the create-testdata/reset-testdata/delete-testdata discovery, static,
-  and live-verification checks all pass, actually run `create-testdata` for real (not the synthetic
-  safety-check call from step 3a) and record what it created in `mcp-surface-register.md`'s Fixture
-  Inventory. Closes issue #37: the live verification alone only ever tests the refuse path against a
-  synthetic slug, it never provisions anything — without this step, a newly-onboarded plugin's
-  sandbox stayed empty, leaving whichever skill got selected first to improvise fixture creation via
-  the older, more generic PR #30 fixture-completeness pre-check instead of the canonical
-  `create-testdata` path.
+- Nothing yet
 
 ### Changed
 - Nothing yet
@@ -32,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - Nothing yet
+
+## [1.1.1] - 2026-07-24
+
+### Added
+- provision sandbox for real after guard verification (#37) (#38)
 
 ## [1.1.0] - 2026-07-24
 
@@ -93,3 +90,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.2]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.0.2
 [1.0.3]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.0.3
 [1.1.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.1.0
+[1.1.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.1.1
