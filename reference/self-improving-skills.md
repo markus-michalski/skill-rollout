@@ -100,7 +100,7 @@ nächsten Skill-Rollout (nicht am "ist das der allererste Live-Lauf?" festgemach
 storyforge falsch), von JEDEM Skill-Rollout vor
 Prompt 3 gelesen und mit neuen Funden ergänzt. Zwei Tabellen:
 
-**MCP Tool Scope** — Tool | Scope (`per-entity` / `global-singleton`) | Restore Strategy | Notes
+**MCP Tool Scope** — Tool | Scope (`per-entity` / `global-singleton` / `shared-mutable-per-entity`) | Restore Strategy | Notes
 **Fixture Inventory** — Entity (z.B. `zz-sandbox-book-memoir`) | Feld/Enum | Vorhandene Werte | Fehlende Werte
 
 **Fixture-Completeness-Pre-Check:** Bevor ein Skill live-getestet wird, gegen die Fixture-Inventory-
@@ -146,7 +146,31 @@ Zurücksetzen hat. Jeder Case, der auf einem Singleton-Wert assertiert, muss dah
 EIGENEN, unmittelbar vorher gesicherten Snapshot/Delta prüfen — nie gegen einen angenommenen
 absoluten Ausgangswert.
 
-Klassifizierung (per-entity/global-singleton, welche Restore-Strategie greift) bleibt Agenten-Urteil
+**Dritte Scope-Kategorie: `shared-mutable-per-entity`** (Issue #33 — verallgemeinert aus einem
+konkreten storyforge-Fund). Anders als `global-singleton` (kein Entity-Slug überhaupt) und
+klassischem `per-entity` (isoliert genug für Git-Restore, ein Skill "besitzt" seine eigene Sandbox-
+Instanz) gibt es einen dritten Fall: ein Tool schreibt in eine per-Entity-Zeile (z.B.
+`character_slug`), aber **zwei verschiedene Skills' Live-Tiers verwenden denselben Slug**, weil einer
+den Sandbox-Charakter/-Entity des anderen bewusst wiederverwendet statt einen eigenen anzulegen —
+konkret: storyforges `update_character_snapshot()`, wo `chapter-writer` und `chapter-reviewer` beide
+denselben Sandbox-POV-Charakter (`freya`) benutzen, und ein späterer Call die Feld-Werte des
+früheren Calls vollständig überschreibt (kein Array-Append). Symptom: ein Skill re-verifiziert seinen
+eigenen, in `sandbox.md` dokumentierten "current state" und findet andere Werte vor, weil ein
+GANZ ANDERER Skill zwischenzeitlich denselben Slug beschrieben hat — kein Bug, aber `sandbox.md`s
+Doku ist dann nur ein Snapshot-zum-Schreibzeitpunkt, keine verlässliche Ground Truth.
+
+Behandlung, analog zu `no-restore-accepted-drift`, aber mit einer zusätzlichen Dokumentationspflicht:
+kein Restore-Versuch (dieselbe Begründung wie beim globalen Singleton — es gibt keine Baseline, zu
+der EIN Skill zurücksetzen dürfte, ohne dem anderen Skill seine eigene Fixture kaputtzumachen), UND
+jede `sandbox.md`, die exakte Werte für einen `shared-mutable-per-entity`-Slug als "current state"
+dokumentiert, MUSS einen expliziten Disclaimer tragen ("diese Werte können durch einen anderen
+Skill überschrieben worden sein — vor Gebrauch live neu lesen, nie ungeprüft übernehmen"). Für neue
+Skills ist ein dedizierter Entity-Slug pro Skill (z.B. `freya-chapter-writer` statt geteiltem
+`freya`) die sauberere Alternative und vermeidet das Problem strukturell — wird aber nicht
+rückwirkend für bereits abgeschlossene Skills erzwungen, wenn der Disclaimer-Weg billiger ist und
+ausreicht.
+
+Klassifizierung (per-entity/global-singleton/shared-mutable-per-entity, welche Restore-Strategie greift) bleibt Agenten-Urteil
 pro Fund — gleiches Muster wie die Read-Only-Klassifikation in `workflows/skill-rollout.js` (echtes
 Tool-Verhalten prüfen, nicht Namens-Präfix, Ergebnis auditierbar im Log) —, das Ergebnis wird ins
 Register geschrieben, damit der nächste Skill-Rollout es nachschlagen statt neu herleiten kann.

@@ -49,6 +49,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unattended subagent calls) prompts for individual approval, defeating the point of an unattended
   batch runner. Confirmed real-world gotcha: entering Plan Mode mid-session silently turns Auto Mode
   off, and a batch that previously ran cleanly starts prompting again with no other cause.
+- `reference/self-improving-skills.md`, `reference/eval-schema.md`: third MCP Surface Register scope
+  category, `shared-mutable-per-entity` (issue #33) — generalized from a concrete storyforge finding
+  (`update_character_snapshot()`, where `chapter-writer` and `chapter-reviewer` both reused the same
+  sandbox POV character `freya`, and a later call's field values silently overwrote the earlier
+  call's, no array-append). Distinct from `global-singleton` (no entity slug at all) and ordinary
+  `per-entity` (one skill owns its own isolated fixture): here a per-entity row IS isolated enough
+  for git-restore purposes, but not isolated BETWEEN skills that deliberately reuse the same entity
+  slug instead of creating their own. Treatment: no restore attempt (same rationale as a global
+  singleton — no baseline one skill could reset to without breaking the other's fixture), plus a
+  mandatory disclaimer requirement — any `sandbox.md` documenting exact "current state" values for
+  a `shared-mutable-per-entity` slug must warn that another skill may have overwritten them, and
+  point at a live re-read instead of trusting the doc. `↺ no-restore-accepted-drift`'s definition in
+  `eval-schema.md` extended to cover this category alongside `global-singleton`.
 
 ### Changed
 - Nothing yet
