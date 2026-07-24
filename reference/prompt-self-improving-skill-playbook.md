@@ -53,37 +53,76 @@ don't infer from any other plugin you may have worked on before)
 3. If plugin.json does NOT declare "mcpServers", no .mcp.json exists, or this is a flat-collection
    repo (no plugin.json at all): this plugin/repo has no MCP server. Note this explicitly — Prompt 3
    (live-MCP tier) does not apply and must be omitted from the generated file, for every skill in it.
-3a. **Only if an MCP server DOES exist (step 2): determine whether a verified-safe sandbox
-   isolation strategy already exists for this plugin's shared storage — this, not whether the
-   plugin's subject matter is "fictional," is what determines whether Prompt 3 can be auto-generated.**
+3a. **Only if an MCP server DOES exist (step 2): check whether this plugin implements the
+   `create-testdata`/`reset-testdata`/`delete-testdata` skill convention — this, not a "human
+   sandbox-design conversation" and not whether the plugin's subject matter is "fictional," is what
+   determines whether Prompt 3 can be auto-generated.**
 
-   Earlier drafts of this rule framed the question as "is the domain disposable-fictional (like
-   storyforge) or real-world (personal/legal/business data)?" — that framing is
-   WRONG and was corrected after checking: storyforge's own shared storage (`~/.storyforge/authors/`)
-   contains a real, actively-used author profile (`ethan-cole`, not sandbox-prefixed) sitting
-   alongside `zz-sandbox-author`, and its book-projects content root has git history of real book
-   projects being created and removed over time. storyforge is NOT safe because books are
-   fictional — a corrupted real chapter the user is actually writing is just as much a real loss
-   as a corrupted real legal case. It's safe because of concrete, already-done engineering: a
-   positive naming convention (`zz-sandbox-` prefix) that unambiguously marks test entities apart
-   from anything real, path-scoped resets that never touch a whole shared directory, an explicit
-   isolated-files-vs-shared-DB distinction with different reset mechanics for each, and
-   `sandbox-baseline` git tags as a restore reference point — all documented and iterated on across
-   this rollout's own `sandbox.md` files.
+   Earlier drafts of this rule gated Prompt 3 behind an undefined "human sandbox-design conversation"
+   step. That gate was never actually honored in practice: confirmed for storyforge, the one plugin
+   that went through this before — a grep across every `loop-log.md` in its skill-evals history and
+   the generated playbook itself turns up zero documented human-Claude design discussion. What
+   actually happened is that autonomous rollout sessions unilaterally designed the `zz-sandbox-`
+   naming convention, the git-tag-baseline reset mechanic, and the MCP-tool-scoped reset for shared
+   storage, then recorded it as settled practice without ever having the conversation the gate
+   required. A vague, unenforceable gate gives an autonomous session under time/token pressure every
+   incentive to just design it itself and move on — exactly what happened.
 
-   So the actual check is: **does this specific plugin already have that same kind of concretely
-   documented, tested isolation design** (a real `sandbox.md`-equivalent naming/scoping/reset
-   strategy that has been verified not to collide with real coexisting data)? Two outcomes:
-   - **Yes, already designed and documented** — proceed to generate Prompt 3. (storyforge is the
-     only confirmed case today, purely because that design work happened here first — not because
-     of anything inherent to fiction as a subject.)
-   - **No such design exists yet** (the default for every plugin not yet through this process,
-     regardless of whether its subject matter sounds fictional or real-world) — Prompt 3 is
-     blocked pending a human conversation to actually design it, per Phase 2 below.
+   Replaced with a concrete, checkable artifact (skill-rollout issue #35): every plugin that wants
+   live-tier testing implements three fixed-name skills — `create-testdata`, `reset-testdata`,
+   `delete-testdata` — per {referenceDir}/self-improving-skills.md's "create-testdata /
+   reset-testdata / delete-testdata convention" section, which onboarding discovers and verifies
+   instead of improvising sandbox design itself. Fixed names across every plugin, never
+   per-plugin-invented ones.
+
+   Check, in order — do not skip either half, existence alone is not enough:
+
+   1. **Discovery.** Do all three of {PLUGIN_REPO_PATH}/skills/create-testdata/SKILL.md,
+      .../reset-testdata/SKILL.md, .../delete-testdata/SKILL.md exist? All three, not a subset — a
+      plugin with only `create-testdata` has not earned the safe classification. Missing any one →
+      outcome is "not yet designed" (below), skip straight there.
+   2. **Static check.** Read each of the three SKILL.md files' actual instruction text (not their
+      prose claims about themselves). Confirm each documents an explicit, unconditional FIRST step
+      that refuses and stops when the target slug does not carry the plugin's disposable-test-data
+      prefix (`zz-sandbox-`) — a concrete, numbered instruction the skill actually follows, not an
+      aspirational mention of safety somewhere in the file. Missing this in any of the three → "not
+      yet designed", same as a missing skill.
+   3. **Live verification — corrected methodology, do not use the original flawed version of this
+      check.** Call `delete-testdata` (the highest-blast-radius of the three) once, with a synthetic
+      test slug that satisfies BOTH: (a) does NOT carry the `zz-sandbox-` prefix, so a working guard
+      refuses it outright, and (b) is constructed so it cannot coincide with any real entity even if
+      the guard were completely broken (a random/timestamp suffix appended — not just "any old
+      non-matching string"). Two outcomes are both zero-risk and acceptable:
+      - The call refuses immediately, before any lookup, citing the prefix mismatch — guard
+        confirmed working.
+      - The call proceeds past a missing/broken guard but then fails with "not found" — the guard
+        didn't fire, but nothing was destroyed, because the synthetic slug never existed as a real
+        entity in the first place.
+      Any OTHER outcome (an actual deletion succeeds, or an error suggests real data was touched)
+      means the guard is not verified-safe — do NOT proceed to Prompt 3; treat this the same as "not
+      yet designed" and add a `needsHumanReview` entry naming the concrete failure.
+
+      **Why this exact construction, not the original proposal:** an earlier version of this check
+      called `delete-testdata` with only "a deliberately non-matching slug," with no
+      provably-nonexistent requirement — if the guard was broken AND that slug happened to resolve to
+      something real, the verification attempt itself would have been the data loss, the test and the
+      damage the same event. The synthetic-slug construction above closes that gap: both possible
+      outcomes of a broken guard stay harmless, only a genuinely working guard or a genuinely inert
+      delete-of-nothing can result. Combine this live check with the static check above — neither
+      replaces the other; a skill can document a guard it doesn't actually enforce, or enforce one it
+      never wrote down for a future maintainer.
+
+   Two outcomes:
+   - **All three checks pass (discovery + static + live)** — proceed to generate Prompt 3.
+   - **Any check fails** — Prompt 3 is blocked, exactly as before, but now with a concrete, buildable
+     unblock path instead of an undefined "have a conversation" step: implement (or fix) the three
+     skills for this plugin per {referenceDir}/self-improving-skills.md's convention section — file a
+     per-plugin GitHub issue for this if one does not already exist, do not attempt to design or fix
+     the sandbox strategy yourself as part of this onboarding.
    **Default to "not yet designed" — do not guess a plugin into the safe bucket because its domain
-   sounds fictional or low-stakes.** A plugin with no prior sandbox work has not earned the "safe"
-   classification yet, no matter what it manages.
-3b. **Only if 3a's outcome was "Yes, already designed and documented":** check whether
+   sounds fictional or low-stakes**, and do not accept the three skills' mere existence (discovery
+   alone) as sufficient without both the static and the live check also passing.
+3b. **Only if 3a's outcome was "all three checks pass" (discovery + static + live):** check whether
    {skillEvalsDir}/{plugin-name}/mcp-surface-register.md already exists. This is a separate,
    continuously-maintained file — not part of this generated playbook — that every skill's later
    Stage A rollout reads before running Prompt 3 and writes new findings into, so skill #2 never
@@ -219,8 +258,9 @@ each playbook's facts are specific to its own repo.
   them together:
   1. No MCP server at all → short explicit note instead of a prompt ("Dieses Plugin hat keinen
      MCP-Server — Live-Tier entfällt, nur Prompt 1+2 gelten.").
-  2. MCP server exists AND the domain is confirmed disposable/fictional (storyforge's own
-     precedent) → generate Prompt 3 in full, same shape as the template.
+  2. MCP server exists AND step 3a's discovery + static + live checks ALL passed for the
+     `create-testdata`/`reset-testdata`/`delete-testdata` convention → generate Prompt 3 in full,
+     same shape as the template.
 
      **Hard constraint on Prompt 3's execution step — do not write "spawn a subagent" (issue #15):**
      Prompt 3 will be executed by an agent running inside the skill-rollout Workflow's own
@@ -252,16 +292,19 @@ each playbook's facts are specific to its own repo.
      section for the exact mechanics and the mandatory capture-before-write rule for any singleton
      tool call. Do not inline that mechanics text again here; point at the source section so the two
      copies cannot drift apart.
-  3. MCP server exists AND the domain is real-world data (the default unless positively ruled
-     out) → do **NOT** generate a ready-to-run Prompt 3. Write a blocked placeholder instead:
-     state plainly that this plugin's live-tier sandbox strategy has not been designed yet because
-     its MCP tools touch real (not disposable) data, name the specific risk (e.g. "a single shared
-     database holds every real case/contact/author profile alongside whatever test entity gets
-     created — a mis-scoped reset could delete real data"), and require an explicit conversation
-     with the user about sandbox design (what becomes the disposable test entity, how it's marked
-     unambiguously, what the reset procedure is and what it must never touch) BEFORE Prompt 3 is
-     ever written for this plugin. This blocked state is mandatory, not a suggestion the runner can
-     skip past — Prompt 2 (simulated tier) still runs fully, only Prompt 3 is gated.
+  3. MCP server exists AND step 3a's checks did NOT all pass (the default until a plugin actually
+     implements and verifies the `create-testdata`/`reset-testdata`/`delete-testdata` convention —
+     regardless of whether its subject matter sounds fictional or real-world) → do **NOT** generate a
+     ready-to-run Prompt 3. Write a blocked placeholder instead: state plainly which check failed
+     (missing skill(s) / missing static refuse-step / live-verification outcome that wasn't one of
+     the two zero-risk cases), name the specific risk (e.g. "a single shared database holds every
+     real case/contact/author profile alongside whatever test entity gets created — a mis-scoped
+     reset could delete real data"), and point at the concrete, buildable unblock path — implement or
+     fix the three-skill convention for this plugin per {referenceDir}/self-improving-skills.md, file
+     a per-plugin GitHub issue if one doesn't already exist — BEFORE Prompt 3 is ever written for this
+     plugin. No "have a conversation" step; this is a buildable engineering task, not an undefined
+     social one. This blocked state is mandatory, not a suggestion the runner can skip past — Prompt 2
+     (simulated tier) still runs fully, only Prompt 3 is gated.
 
      **This plugin-level block is not necessarily final per-skill (issue #24):** at rollout time,
      `workflows/skill-rollout.js`'s Stage A checks each individual skill's OWN domain-tool surface
@@ -278,10 +321,14 @@ Before presenting the result, re-read the generated file against Phase 1's actua
 every stated fact trace back to something you actually verified for {PLUGIN_REPO_PATH} in Phase 1 —
 none of it copied from {referenceDir}/self-improving-skills.md's own example content? Does Prompt 3's
 presence/absence/blocked-state correctly match step 3/3a's findings (no MCP server → omitted; MCP
-server + confirmed fictional domain → full prompt; MCP server + real-world data or genuine
-uncertainty → blocked placeholder, never a ready-to-run prompt)? Did you guess anywhere instead of
-confirming or asking — including guessing a plugin into the "fictional" bucket without a positive,
-specific reason? If yes, stop and ask now rather than presenting it.
+server + all three of discovery/static/live checks passed → full prompt; MCP server + any of those
+three checks failed or uncertain → blocked placeholder naming which check failed, never a
+ready-to-run prompt)? Did you guess anywhere instead of confirming or asking — including guessing a
+plugin into the safe bucket on domain vibes ("sounds fictional", "sounds low-stakes") rather than the
+three concrete checks? For the live-verification check specifically: did you confirm the test slug
+was actually constructed to be provably-nonexistent (not just non-matching), and did you record which
+of the two zero-risk outcomes actually occurred? If any of this was guessed rather than confirmed,
+stop and ask now rather than presenting it.
 
 Write the output in German (explanatory text) with English prompt blocks, matching
 {referenceDir}/self-improving-skills.md's style.
