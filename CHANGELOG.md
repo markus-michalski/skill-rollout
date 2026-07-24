@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restore `update_session()`'s prior value (issue #26). New `↺ no-restore-accepted-drift` Notes-column
   symbol in `eval-schema.md`, distinct from 🟨 NEEDS-HUMAN-REVIEW (this one is an expected, resolved
   outcome, not an open question for a human).
+- `README.md`, `skills/run/SKILL.md`: documented that Claude Code's Auto Mode must be ON before
+  invoking `/skill-rollout:run` — without it, every routine tool call inside the batch (including
+  unattended subagent calls) prompts for individual approval, defeating the point of an unattended
+  batch runner. Confirmed real-world gotcha: entering Plan Mode mid-session silently turns Auto Mode
+  off, and a batch that previously ran cleanly starts prompting again with no other cause.
 
 ### Changed
 - Nothing yet

@@ -19,6 +19,13 @@ storyforge rollout, generalized for any Claude plugin). The one-batch-no-auto-ch
 deliberate: after a batch stops, the operator reviews and merges the resulting PRs/issues before the
 next batch is manually invoked — see Step 4 below for how that boundary is enforced.
 
+**Before launching — check Auto Mode is ON.** Without it, individual Bash/MCP tool calls inside the
+batch (including subagent calls made unattended, away from the keyboard) prompt for approval one by
+one, defeating the point of an unattended run. If unsure, ask the operator to confirm before
+proceeding — do not launch a long batch expecting it to run hands-off if this hasn't been checked.
+A known gotcha: entering Plan Mode during a session turns Auto Mode off as a side effect; if a batch
+that previously ran cleanly suddenly starts prompting again, this is the first thing to check.
+
 **This skill is a thin entry point.** All real logic lives in the Workflow script that ships inside
 this plugin at `workflows/skill-rollout.js`. This file only resolves arguments, launches that
 script, and enforces the wall-clock cutoff the workflow script itself structurally cannot (Workflow
