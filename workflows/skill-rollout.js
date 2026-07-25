@@ -261,6 +261,39 @@ same time. The two steps below are NOT independent hygiene tips — do both, in 
    above conditions, no exceptions.`
 }
 
+// Shared deploy-sync guardrail for Stage C's post-commit SKILL.md sync (issue #46). Confirmed
+// incident: a rollout batch's Stage C treated the operator's own source/dev checkout
+// (pluginRepoPath, outside any worktree) as a third "deploy location" alongside the two genuine
+// non-git-tracked deploy caches, and raw-copied the fixed SKILL.md straight into it — leaving a
+// stray, byte-identical-to-the-merged-PR uncommitted diff sitting in a checkout the operator
+// actively works in. Two other skills in the SAME batch independently reasoned their way to the
+// correct behavior later on, but nothing retroactively cleaned up the first mistake or flagged it —
+// this function is the fix: state the exclusion explicitly and share it at the one call site,
+// rather than relying on each skill's agent to re-derive it (same precedent as
+// skillEvalsGitSafety/batchDigestHeaderInstruction above).
+function deploySyncGuardrail(pluginRepoPath) {
+  return `Sync any SKILL.md change to every deploy location the plugin playbook's repo facts list —
+**except the operator's own regular dev checkout of this same plugin repo.** That checkout is a
+DIFFERENT path on disk than ${pluginRepoPath} above — in preIsolated/worktree mode, ${pluginRepoPath}
+is a dedicated, single-use worktree created just for this pipeline run, never the operator's regular
+checkout; do not confuse the two. The operator's regular checkout (the plain, non-worktree clone they
+edit by hand day-to-day, e.g. \`~/projekte/{plugin-name}\`) is never a raw-copy deploy target, no
+matter what the playbook's repo-facts list says — it already receives this exact change through the
+commit → PR → merge → \`git pull\` cycle, the same way any other consumer of the merged code does.
+Writing into it directly bypasses git and leaves a stray, unexplained uncommitted diff in a checkout
+the operator is actively working in outside this pipeline (confirmed incident, issue #46).
+
+The only legitimate raw-copy deploy targets are consumer copies that exist purely to be LOADED FROM —
+not checkouts anyone authors commits in — e.g. a marketplace clone or a versioned plugin cache Claude
+Code loads skills from directly. (A marketplace clone is itself a git repo, so "is it a git repo" is
+the wrong test — the right test is "does a human write commits here", not "is git present".)
+
+If the playbook's repo-facts list itself names the operator's own dev checkout as a "deploy
+location" (a known, previously-confirmed doc inconsistency — issue #46): do NOT follow that
+instruction, and add a \`needsHumanReview\` entry naming the specific playbook file and section, so
+a human corrects the doc once instead of every future skill re-discovering the same trap.`
+}
+
 // Isolation preamble shared by all three stages. `role` is 'create' for Stage A (first to touch
 // pluginRepoPath — creates the worktree in non-preIsolated mode) or 'resume' for Stage B/C (must
 // re-enter the EXACT worktree Stage A created, identified by `worktreePath`, never a fresh one).
@@ -946,8 +979,9 @@ Append the closing entry to ${skillEvalsDir}/${pluginName}/${skillName}/loop-log
 entries were already written by Stage A during Prompt 2 — this is the closing entry, and should
 reflect the actually-reviewed, actually-committed final state, including the PR URL if one was
 opened), write the final loop-state.json, and update this skill's row in
-${skillEvalsDir}/${pluginName}/STATUS.md. Sync any SKILL.md change to every deploy location the
-plugin playbook's repo facts list.
+${skillEvalsDir}/${pluginName}/STATUS.md.
+
+${deploySyncGuardrail(pluginRepoPath)}
 
 Commit and push this closing bookkeeping (and anything else this stage wrote inside
 ${skillEvalsDir}) following:
