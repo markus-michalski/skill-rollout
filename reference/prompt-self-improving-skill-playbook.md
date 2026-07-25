@@ -192,6 +192,13 @@ don't infer from any other plugin you may have worked on before)
    ~/.claude/plugins/cache/{plugin-name}/{plugin-name}/<version>) — confirm whether code/skill
    changes need syncing there before they take effect, and whether an MCP-server code change needs
    a full Claude Code restart to reload (vs. a plain SKILL.md change, which doesn't).
+   **The source/dev repo itself (PLUGIN_REPO_PATH, or wherever the operator's regular non-worktree
+   checkout lives) is never one of these "deploy locations" — do not list it as one.** It is where
+   commits happen, and it picks up every change automatically via the normal
+   commit → PR → merge → `git pull` cycle; raw-copying a file into it bypasses git and leaves an
+   uncommitted, unexplained diff in a checkout the operator actively works in (confirmed incident,
+   issue #46). Deploy locations are exclusively the non-git-tracked-by-the-operator copies Claude
+   Code actually loads from (marketplace clone, versioned cache) — count only those.
 
 Do not write anything yet. Report what you found before drafting, so I can catch any wrong
 assumption before it goes into a permanent playbook document.
