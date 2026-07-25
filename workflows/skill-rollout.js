@@ -1200,6 +1200,7 @@ if (skillsToProcess.length === 0) {
 }
 
 phase('Rollout')
+log(`Batch for ${plugin}: ${skillsToProcess.length} skill(s) selected — ${skillsToProcess.map(s => s.name).join(', ')}.`)
 if (preIsolated) log(`preIsolated mode: agents work directly in the dedicated worktree ${pluginRepoPath} (no EnterWorktree; branch per skill off origin/main).`)
 const results = []
 let consecutiveFailures = 0

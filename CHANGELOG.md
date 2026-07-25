@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Nothing yet
+- Batch-start log() in Rollout phase announces selected skills for every run, not only onboarding runs (#43)
 
 ### Changed
 - Nothing yet
