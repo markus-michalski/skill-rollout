@@ -206,10 +206,19 @@ same convention as loop-log.md) a "## Batch started" header to
 ${skillEvalsDir}/${pluginName}/batch-digest.md with the real current date/time (via \`date\`),
 the requested count (${count}), and the list of skills selected for this batch. This is the file
 each skill's own rollout will append its result to as it finishes — the header marks where this
-batch's entries begin, so a human tailing the file mid-run can tell batches apart. **Do NOT commit
-this write yourself** — leave it uncommitted in the working tree; the first selected skill's own
-Stage C bookkeeping commit (scoped to \`${skillEvalsDir}/${pluginName}/\`) picks it up naturally as
-part of its normal commit, without this stage needing its own git-safety cycle.`
+batch's entries begin, so a human tailing the file mid-run can tell batches apart. That only works
+if every skill's result section actually lands AFTER this header, never before it (issue #44: a
+skill's own Stage C ran after this header was written but still inserted its section above it,
+making the file read as if that skill belonged to the PRIOR batch).
+
+**Write this with a real shell append, e.g. \`cat >> ${skillEvalsDir}/${pluginName}/batch-digest.md
+<<'EOF' ... EOF\` (or an equivalent \`>>\` redirect) — never a Write/Edit-tool overwrite of the whole
+file.** A shell append is structurally incapable of landing anywhere but true end-of-file, which is
+what makes the ordering guarantee hold regardless of what an agent believes is currently there;
+rewriting the whole file via Write/Edit reopens exactly the position mistake issue #44 found. **Do
+NOT commit this write yourself** — leave it uncommitted in the working tree; the first selected
+skill's own Stage C bookkeeping commit (scoped to \`${skillEvalsDir}/${pluginName}/\`) picks it up
+naturally as part of its normal commit, without this stage needing its own git-safety cycle.`
 }
 
 // Shared git-safety rule for EVERY commit to skillEvalsDir (issue #20). skillEvalsDir is a single
@@ -960,6 +969,17 @@ append (do not overwrite, do not remove anything already there — same append-o
 loop-log.md) a new section to ${skillEvalsDir}/${pluginName}/batch-digest.md with this skill's name,
 simulated/live scores, PR URLs, issues filed, and any needsHumanReview entries — a few lines, not a
 full report. Create the file with a one-line header if it doesn't exist yet.
+
+**Write this with a real shell append, e.g. \`cat >> ${skillEvalsDir}/${pluginName}/batch-digest.md
+<<'EOF' ... EOF\` (or an equivalent \`>>\` redirect) — never a Write/Edit-tool rewrite of the whole
+file.** This matters even more here than elsewhere: if you are this batch's first skill, a
+"## Batch started" header (written by the Select stage, before this batch began, deliberately left
+uncommitted for you to pick up) is likely already sitting at the end of the file — that header is
+not a preamble to insert your section above, it is literal end-of-file content you append after,
+same as any other existing entry. A real shell append is structurally incapable of landing anywhere
+but true end-of-file, so it can't reorder relative to that header no matter what. Getting this
+backwards (issue #44) puts your section before the header that introduces the batch it belongs to,
+making the file read as if you were part of the PRIOR batch instead.
 
 Return the structured result: scores (carry forward Stage A's evalScores), PR URLs (open, not
 merged — empty array if nothing was staged), issues filed (Stage A's issuesFiled, plus any you filed
