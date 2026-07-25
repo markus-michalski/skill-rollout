@@ -20,7 +20,8 @@
       "mcp__liveserver__ssh_read_log",
       "mcp__liveserver__ssh_list_files",
       "mcp__plugin_storyforge_storyforge-mcp__get_author",
-      "mcp__liveserver__docker_container_logs"
+      "mcp__liveserver__docker_container_logs",
+      "Workflow"
     ]
   }
 }
