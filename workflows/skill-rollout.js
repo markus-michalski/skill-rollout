@@ -124,6 +124,7 @@ const EDIT_RESULT_SCHEMA = {
     needsHumanReview: { type: 'array', items: { type: 'string' } },
     issuesFiled: { type: 'array', items: { type: 'string' } },
     worktreePath: { type: 'string', description: 'Only set when non-preIsolated AND EnterWorktree was actually called: the absolute path of the worktree this skill\'s changes are staged in (e.g. via `git rev-parse --show-toplevel` right after entering). Stage B/C must resume THIS SAME worktree via EnterWorktree({path}) rather than creating a new one or operating on the original pluginRepoPath directly. Leave empty when preIsolated (all stages share pluginRepoPath directly, no EnterWorktree involved) or when isolation failed/was skipped.' },
+    mcpSurfaceAbsent: { type: 'boolean', description: 'issue #51: true if this skill needed the plugin\'s MCP server for its live tier but ToolSearch found the server entirely absent from this agent\'s own tool surface (not connected in this session) — a batch-level environment problem, distinct from "skill has no MCP calls" (N/A) or "sandbox not implemented" (BLOCKED, hard gate).' },
     summary: { type: 'string' },
   },
   required: ['skill', 'hasChanges', 'summary'],
@@ -212,7 +213,7 @@ const NEEDS_REVIEW_TRIAGE_SCHEMA = {
   required: ['items'],
 }
 
-// issue #45, option B chosen over option A (adding this to skills/run/SKILL.md's Step 4 instead):
+// issue #45, option B chosen over option A (adding this to skills/run/SKILL.md's Report step instead):
 // the data this needs — every skill's needsHumanReview + issuesFiled + prUrls — already exists in
 // `results` in-memory at this point in the SAME script, gathered as a byproduct of the normal
 // per-skill loop above. Re-deriving it from scratch by re-reading every loop-log.md from a separate
@@ -574,6 +575,27 @@ skill's name or a stale STATUS.md note; \`configure\` in storyforge was wrongly 
 and it wasn't) AND the Live column isn't already ✅ or verified N/A AND the plugin playbook's own
 Prompt 3 section is a real, ready-to-run prompt, not a blocked placeholder.**
 
+**Connectivity check (issue #51) — once the gate above establishes that the plugin has a real MCP
+server AND this skill actually calls it, do this check BEFORE running Prompt 3 itself.** This is a
+different failure mode from "skill has no MCP calls" (that's the N/A case below) or "live tier
+blocked pending sandbox" (the hard gate further down): even when the plugin genuinely has an MCP
+server AND this skill calls it, the server can simply not be connected in THIS session —
+\`enabledPlugins: true\` in settings.json is not proof of a live connection; toggling a plugin on
+mid-session does not retroactively connect its MCP server, that needs a fresh session or a
+\`/plugin-toggle\` off→on cycle. Confirm via \`ToolSearch\` that the plugin's own declared MCP
+server's tools actually come back with real schemas, not just that the server is named somewhere. If
+the server is completely absent from your own tool surface: do NOT silently downgrade to
+simulated-only and do NOT treat this as this skill's own N/A case. Set \`mcpSurfaceAbsent: true\` on
+your structured result and add a \`needsHumanReview\` entry stating the plugin's MCP server was not
+connected in this session (name the server) — but do NOT mark the Live column 🟥 BLOCKED or 🟦 N/A for
+this: per ${evalSchemaPath}, both of those mean something more permanent (an unimplemented sandbox
+convention, or a genuinely MCP-free skill) than a transient session-connectivity gap. Leave it ⬜ (not
+attempted yet — which is accurate here) and let \`mcpSurfaceAbsent\` plus the \`needsHumanReview\` note
+carry the signal instead. The launcher-side pre-flight in \`skills/run/SKILL.md\` Step 2 is supposed
+to catch this before any skill work starts, so if you are hitting it here, that pre-flight was skipped
+or the environment changed mid-batch; either way this is a batch-level environment problem, not a
+per-skill finding.
+
 **Read-only bypass, check this FIRST, before the hard gate below (issue #24):** grep every domain
 MCP tool call this skill's own SKILL.md actually makes — not a plugin-wide sample, this specific
 skill's own surface, real invocations only (a tool NAMED in cautionary prose, e.g. "unlike
@@ -771,6 +793,19 @@ ${isolationSection(pluginRepoPath, skillName, skillEvalsDir, preIsolated, 'creat
 ## The fixed test sequence — run this instead of Prompt 1/2/3, regardless of which of the three
 ## skills is the one actually being rolled out right now
 
+**Connectivity check first (issue #51) — these three skills ARE the plugin's MCP-dependent sandbox
+mechanism, more so than almost any other skill in the rollout, so a disconnected server blocks this
+entire sequence, not just one step.** Before step 1 below, confirm via \`ToolSearch\` that the
+plugin's own declared MCP server's tools actually come back with real schemas in your own tool
+surface — \`enabledPlugins: true\` in settings.json is not proof of a live connection. If the server
+is completely absent: do NOT attempt any part of the sequence below, do NOT mark any of the three
+skills' Live columns done — and do NOT mark them 🟥 BLOCKED or 🟦 N/A either, both mean something more
+permanent than a transient session-connectivity gap; leave ⬜ (not attempted yet, which is accurate
+here). Set \`mcpSurfaceAbsent: true\` on your structured result, add a \`needsHumanReview\` entry naming
+the server and stating it was not connected in this session, and stop — the launcher-side pre-flight
+in \`skills/run/SKILL.md\` Step 2 should have caught this before any skill work started; if you're
+hitting it here, that pre-flight was skipped or the environment changed mid-batch.
+
 Run all three skills' real behavior, in this exact order, discovering each via ToolSearch/Skill
 invocation if not already loaded — never simulate any of these calls, every step below needs a real
 \`tool_use\`/Skill-invocation as evidence, same evidentiary rigor as any other live-tier case in this
@@ -862,8 +897,8 @@ Add an entry to \`needsHumanReview\` if:
 
 Return the structured result: hasChanges, stoppedEarly/stopReason, evalScores (simulatedScore/
 liveScore as the fixed-sequence note described above, not a pass/total), needsHumanReview,
-issuesFiled, worktreePath, and a short prose summary of the sequence run and this skill's own step's
-outcome.`
+issuesFiled, worktreePath, mcpSurfaceAbsent (per the connectivity check above), and a short prose
+summary of the sequence run and this skill's own step's outcome.`
 }
 
 function reviewPrompt(pluginName, pluginRepoPath, skillName, skillEvalsDir, preIsolated, worktreePath) {
@@ -1222,6 +1257,18 @@ would just leave two "## Batch started" sections for the same batch.`,
   { schema: SELECTION_SCHEMA, phase: 'Select' }
 )
 
+// issue #52: same null-vs-throw gap as the per-skill Stage A/C guards below — agent() resolves to
+// null (not throw) on a user-skip or a terminal API error after retries, even with a schema set.
+// This call has no try/catch (a throw here already aborts the whole run before any skill work
+// starts, which is correct), but an unguarded null would crash on `selection.pluginRepoPathExists`
+// immediately below instead of failing with a clear message.
+if (!selection) {
+  return {
+    batchSummary: `Aborted: the Select phase agent() call resolved to null (terminal API error or user-skip after retries) for plugin "${plugin}" — nothing was confirmed yet, retry the batch.`,
+    totalPRs: [], totalIssues: [], totalNeedsHumanReview: [],
+  }
+}
+
 if (!selection.pluginRepoPathExists) {
   return {
     batchSummary: `Aborted: "${pluginRepoPath}" could not be confirmed to exist as a directory for plugin "${plugin}". Not proceeding on an unverified path — check the argument and retry.`,
@@ -1288,6 +1335,15 @@ verbatim — use \`chore(rollout-onboarding): subject\` instead (same Convention
 different scope) so it's still consistently distinguishable from a per-skill PR at a glance.`,
     { schema: ONBOARD_SCHEMA, phase: 'Onboard' }
   )
+
+  // issue #52: same null-vs-throw gap — a null here would crash on `onboardResult.summary` below.
+  if (!onboardResult) {
+    return {
+      batchSummary: `Aborted: the onboarding agent() call resolved to null (terminal API error or user-skip after retries) for plugin "${plugin}" — stopping before any skill work rather than building on an unverified playbook. Retry the batch.`,
+      totalPRs: [], totalIssues: [], totalNeedsHumanReview: [],
+    }
+  }
+
   batchNotes.push(`Onboarding: ${onboardResult.summary}`)
   if (Array.isArray(onboardResult.needsHumanReview)) batchNotes.push(...onboardResult.needsHumanReview)
 
@@ -1316,6 +1372,15 @@ first-ever onboarding run had nothing to distinguish "still onboarding" from "si
 onboarding itself finished).`,
     { schema: SELECTION_SCHEMA, phase: 'Select' }
   )
+
+  // issue #52: same null-vs-throw gap — a null here would crash on `reselect.pluginRepoPathExists`
+  // below. Onboarding itself already succeeded at this point, so no need to re-run it on retry.
+  if (!reselect) {
+    return {
+      batchSummary: `Aborted: the post-onboarding reselect agent() call resolved to null (terminal API error or user-skip after retries) for plugin "${plugin}" — onboarding completed, but skill selection could not be confirmed. Retry the batch (onboarding won't need to re-run). Details: ${batchNotes.join(' | ')}`,
+      totalPRs: [], totalIssues: [], totalNeedsHumanReview: onboardResult.needsHumanReview ?? [],
+    }
+  }
 
   if (!reselect.pluginRepoPathExists) {
     return {
@@ -1351,6 +1416,7 @@ log(`Batch for ${plugin}: ${skillsToProcess.length} skill(s) selected — ${skil
 if (preIsolated) log(`preIsolated mode: agents work directly in the dedicated worktree ${pluginRepoPath} (no EnterWorktree; branch per skill off origin/main).`)
 const results = []
 let consecutiveFailures = 0
+let mcpSurfaceAbsentFlagged = false // issue #51: fire the loud rollup once, not once per skill
 const FAILURE_CIRCUIT_BREAKER = 3 // stop the batch if this many skills in a row error out or self-report stoppedEarly — almost certainly a systemic problem, not a per-skill fluke
 
 for (const skill of skillsToProcess) {
@@ -1380,6 +1446,39 @@ for (const skill of skillsToProcess) {
       summary: `Stage A (eval+edit) agent call threw and was caught: ${err && err.message ? err.message : String(err)}`,
       needsHumanReview: [`${skill.name}: Stage A agent call failed, see batch log — this skill's own state files may be partially updated, check before assuming it's untouched.`],
     }
+  }
+
+  // issue #52: same null-vs-throw gap as Stage C below — agent() resolves to null (not throw) on a
+  // user-skip or a terminal API error after retries, even with a schema set. editResult.hasChanges
+  // is dereferenced immediately below, so an unguarded null here crashes the whole batch loop.
+  if (!editResult) {
+    editResult = {
+      skill: skill.name,
+      hasChanges: false,
+      stoppedEarly: true,
+      stopReason: 'agent_null_result',
+      summary: `Stage A (eval+edit) agent() call resolved to null (terminal API error or user-skip after retries) — see run logs.`,
+      needsHumanReview: [`${skill.name}: Stage A returned no result — this skill's own state files may be partially updated, check before assuming it's untouched.`],
+    }
+  }
+
+  // issue #51 defense-in-depth: the launcher-side pre-flight in skills/run/SKILL.md Step 2 is
+  // supposed to catch a disconnected target-plugin MCP server before any skill work starts. If it
+  // was skipped (or the environment changed mid-batch) and Stage A hits the same wall itself, don't
+  // let skills #2-N silently repeat the identical per-skill note with no rollup tying them together
+  // — surface it loudly once, at the batch level, so the operator sees the actual root cause instead
+  // of having to notice the pattern by eye across N separate digest entries.
+  //
+  // Deliberately does NOT trip the circuit breaker / stop the batch: a disconnected MCP server only
+  // invalidates the LIVE tier, and each skill's simulated-tier work (evals.json, SKILL.md fixes) is
+  // still independently valid and worth keeping even if live can't be verified this run. Silently
+  // continuing was issue #51's own actual incident, so the loud log/note above is mandatory — but
+  // discarding N skills' worth of already-good simulated work over an environment problem the
+  // pre-flight above should have already caught would trade one failure mode for a worse one.
+  if (editResult.mcpSurfaceAbsent && !mcpSurfaceAbsentFlagged) {
+    mcpSurfaceAbsentFlagged = true
+    log(`WARNING: ${skill.name} reports the plugin's MCP server is absent from its own tool surface — this session likely never connected to it. Live-tier results for this and any following skill in this batch are suspect until that's fixed (fresh session, or /plugin-toggle off→on the target plugin). See skills/run/SKILL.md Step 2 for the pre-flight this should have caught.`)
+    batchNotes.push(`MCP surface absent: first observed on "${skill.name}" — the target plugin's MCP server was not connected in this session (the launcher-side pre-flight should catch this before any skill work starts; if you're seeing this, it was skipped or the environment changed mid-batch). Live-tier claims for this and any subsequent skill in this batch need independent verification before being trusted.`)
   }
 
   // Stage B — independent review, only if there is something staged to review.
@@ -1425,6 +1524,18 @@ for (const skill of skillsToProcess) {
       stoppedEarly: true,
       stopReason: 'agent_error',
       needsHumanReview: [`${skill.name}: Stage C agent call failed after Stage A staged changes — check ${pluginRepoPath} for an uncommitted/unreviewed diff before starting the next skill.`],
+    }
+  }
+
+  // issue #52: agent() resolves to null (not throw) when the user skips mid-run or the subagent
+  // dies on a terminal API error after retries — the try/catch above only covers the throw case.
+  if (!result) {
+    result = {
+      skill: skill.name,
+      summary: `Stage C (commit) agent() call resolved to null (terminal API error or user-skip after retries) — see run logs.`,
+      stoppedEarly: true,
+      stopReason: 'agent_null_result',
+      needsHumanReview: [`${skill.name}: Stage C returned no result — check ${pluginRepoPath} for an uncommitted/unreviewed diff before starting the next skill.`],
     }
   }
 
@@ -1480,6 +1591,14 @@ if (allNeedsHumanReview.length > 0) {
     triageFailed = true
     batchNotes.push(`needsHumanReview triage pass failed (${err && err.message ? err.message : String(err)}) — the digest below falls back to the raw, un-cross-checked needsHumanReview entries already present in each skill's own result.`)
   }
+  // issue #52: same null-vs-throw gap — the try/catch above only covers the throw case. A null here
+  // would crash on `triage.items` below (JSON.stringify + the digest.needsHumanReviewTriage assign),
+  // and silently skip the triageFailed fallback path since the catch block never runs for a null.
+  if (!triage) {
+    triageFailed = true
+    triage = { items: [] }
+    batchNotes.push(`needsHumanReview triage pass resolved to null (terminal API error or user-skip after retries) — the digest below falls back to the raw, un-cross-checked needsHumanReview entries already present in each skill's own result.`)
+  }
 }
 
 // Only tell the digest agent to defer to the triage list when triage actually produced one — an
@@ -1505,7 +1624,7 @@ needsHumanReview arrays — for each triage item, surface it prominently with it
 grouped so "needs a new issue filed" items are impossible to miss and "already tracked" items stay
 brief.`
 
-const digest = await agent(
+let digest = await agent(
   `Synthesize ONE batch-wide digest from these per-skill results (this is the ONLY summary a human
 will read after this batch — be concrete, not generic):
 
@@ -1521,6 +1640,20 @@ genuine blocker. If the batch was cut short (circuit breaker or fewer skills sel
 requested), say so explicitly rather than implying the full batch size was processed.`,
   { schema: DIGEST_SCHEMA, phase: 'Digest' }
 )
+
+// issue #52: this is the highest-value site for this whole bug class — a null here crashes AFTER
+// every skill in the batch has already run, wiping out the only human-readable summary of work that
+// otherwise completed successfully (the PRs/issues themselves still exist, but nobody gets told
+// about them). Fall back to a programmatic summary built from the same `results`/`batchNotes` the
+// digest agent itself would have used, rather than losing the batch's outcome entirely.
+if (!digest) {
+  digest = {
+    batchSummary: `Digest agent() call resolved to null (terminal API error or user-skip after retries) — this is a programmatic fallback summary, not the usual synthesized one. ${results.length} skill(s) processed for "${plugin}": ${results.map(r => r.skill).join(', ') || '(none)'}. Batch-level notes: ${batchNotes.join(' | ') || 'none'}.`,
+    totalPRs: results.flatMap(r => Array.isArray(r.prUrls) ? r.prUrls : []),
+    totalIssues: results.flatMap(r => Array.isArray(r.issuesFiled) ? r.issuesFiled : []),
+    totalNeedsHumanReview: results.flatMap(r => Array.isArray(r.needsHumanReview) ? r.needsHumanReview : []),
+  }
+}
 
 digest.needsHumanReviewTriage = triage.items
 
