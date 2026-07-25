@@ -20,15 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Stage C no longer logs its standard `git-pr-workflows:git-workflow` bypass as a
-  `needsHumanReview` entry — the bypass is the intended design for every skill's Stage C
-  (AskUserQuestion checkpoints/Task-tool subagent phases are unavailable in that unattended
-  context), and the entry was pure noise that buried genuinely actionable findings in the
-  batch digest. The convention now lives in `reference/eval-schema.md` §7, referenced from
-  both of Stage C's commit branches.
+- Nothing yet
 
 ### Security
 - Nothing yet
+
+## [1.3.1] - 2026-07-25
+
+### Fixed
+- stop Stage C flagging its PR-creation bypass as needsHumanReview (#50)
 
 ## [1.3.0] - 2026-07-25
 
@@ -121,3 +121,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.2.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.2.0
 [1.2.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.2.1
 [1.3.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.3.0
+[1.3.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.3.1
