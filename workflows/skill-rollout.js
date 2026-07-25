@@ -178,6 +178,90 @@ const DIGEST_SCHEMA = {
   },
   required: ['batchSummary'],
 }
+// needsHumanReviewTriage (issue #45) is deliberately NOT a DIGEST_SCHEMA property: it's always
+// attached programmatically after this agent call from the dedicated triage pass's own result
+// (see below), so asking the digest agent to also produce it via schema would only burn output
+// tokens on a value that gets overwritten regardless — see NEEDS_REVIEW_TRIAGE_SCHEMA for its shape.
+
+// issue #45: needsHumanReview entries are easy to miss (they only exist as prose in loop-log.md and
+// the final batchSummary) and easy to double-file (a human re-reading the summary can't tell which
+// ones already got an issue this batch vs. which are still just a flag). This schema is the triage
+// pass's structured output — one row per needsHumanReview item, with a REAL existence check against
+// GitHub (not a trust of the loop-log's own "issue filed" claim — same principle as the
+// eval-sandbox-claims-verification precedent from prior rollouts: a self-report of "done" is not
+// evidence it happened) and an explicit file-or-not recommendation for whatever isn't already tracked.
+const NEEDS_REVIEW_TRIAGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          skill: { type: 'string' },
+          item: { type: 'string', description: 'The needsHumanReview entry text, verbatim or lightly trimmed' },
+          alreadyTracked: { type: 'boolean' },
+          trackedAs: { type: 'string', description: 'Issue/PR URL if alreadyTracked and verified to actually exist — empty string otherwise' },
+          recommendation: { type: 'string', enum: ['file_issue', 'no_issue_needed', 'already_tracked'] },
+          rationale: { type: 'string', description: 'Why this recommendation — severity/blast-radius drives file_issue vs no_issue_needed' },
+        },
+        required: ['skill', 'item', 'alreadyTracked', 'recommendation', 'rationale'],
+      },
+    },
+  },
+  required: ['items'],
+}
+
+// issue #45, option B chosen over option A (adding this to skills/run/SKILL.md's Step 4 instead):
+// the data this needs — every skill's needsHumanReview + issuesFiled + prUrls — already exists in
+// `results` in-memory at this point in the SAME script, gathered as a byproduct of the normal
+// per-skill loop above. Re-deriving it from scratch by re-reading every loop-log.md from a separate
+// skill invocation after the workflow returns would duplicate work this script already did, and
+// would only work for this one caller instead of every consumer of this reusable workflow.
+function needsReviewTriagePrompt(results, pluginRepoPath) {
+  return `For this batch's per-skill results below, extract EVERY needsHumanReview entry across every
+skill and cross-check each one against what was actually filed for that skill this batch (its own
+issuesFiled/prUrls arrays below).
+
+${JSON.stringify(results.map(r => ({
+    skill: r.skill,
+    needsHumanReview: r.needsHumanReview || [],
+    issuesFiled: r.issuesFiled || [],
+    prUrls: r.prUrls || [],
+  })), null, 2)}
+
+**Before calling any \`gh\` command: \`cd ${pluginRepoPath}\`.** issuesFiled/prUrls entries are often
+bare references (e.g. \`#12\`) with no repo qualifier — \`gh\` resolves those against whatever repo
+your current directory's git remote points at, same convention this whole script uses everywhere
+else (never pass \`--repo\`, this is the one and only repo in scope here). Running \`gh issue view 12\`
+from anywhere else silently resolves against the WRONG repo and would report a false "verified" match.
+
+For each needsHumanReview entry:
+
+1. **Verify, don't trust.** Check whether the entry's substance is already covered by one of that
+   skill's own issuesFiled/prUrls entries. Do NOT take a loop-log's self-report of "issue filed" at
+   face value — actually call \`gh issue view <number-or-url>\` or \`gh pr view <url>\` (from
+   ${pluginRepoPath}, per above) for every candidate match and confirm it (a) actually exists and (b)
+   its title/body substantively covers this specific needsHumanReview item, not just any issue filed
+   for the same skill. An issuesFiled/prUrls entry that doesn't resolve, or resolves to something
+   unrelated, does NOT count as tracked.
+2. **If already tracked** (verified above): mark alreadyTracked=true, trackedAs=the verified URL,
+   recommendation="already_tracked" — a human doesn't need this re-surfaced in detail, just a
+   confirmation it's covered.
+3. **If NOT already tracked:** mark alreadyTracked=false, trackedAs="", and give an explicit
+   recommendation driven by severity/blast-radius:
+   - recommendation="file_issue" for anything with real consequence if ignored — data loss, security,
+     a genuine functional bug, anything that could recur for a future skill or user.
+   - recommendation="no_issue_needed" for items that are informational only — a deliberate
+     scope-limitation note (e.g. "not live-tested for privacy reasons, no code defect"), a
+     self-correction already resolved in the same skill's own commit, or routine process
+     documentation with no actionable defect behind it.
+   Always give a concrete one-sentence rationale — "looks minor" is not a rationale, name the actual
+   reason (e.g. "deliberate scope decision, not a defect" or "real data-loss risk if a future run hits
+   this path unmodified").
+
+If a skill has zero needsHumanReview entries, it simply contributes no rows — do not invent one.`
+}
 
 // Plain regex validation, no restricted API involved — fail fast before spending any agent() calls
 // on a malformed plugin slug (defense in depth, per code review M2; args come from a human typing
@@ -1367,6 +1451,51 @@ for (const skill of skillsToProcess) {
 }
 
 phase('Digest')
+
+// issue #45: run the needsHumanReview triage BEFORE the human-readable digest, so its verified
+// tracked/untracked findings can be folded into the digest prompt below instead of the digest agent
+// re-deriving (and possibly re-trusting-without-verifying) the same cross-check itself. Skip the
+// call entirely when there is nothing to triage — an empty batch or a batch where no skill flagged
+// anything shouldn't spend an agent() call finding that out.
+const allNeedsHumanReview = results.flatMap(r => Array.isArray(r.needsHumanReview) ? r.needsHumanReview : [])
+let triage = { items: [] }
+let triageFailed = false
+if (allNeedsHumanReview.length > 0) {
+  try {
+    triage = await agent(needsReviewTriagePrompt(results, pluginRepoPath), {
+      label: 'needsHumanReviewTriage',
+      schema: NEEDS_REVIEW_TRIAGE_SCHEMA,
+      phase: 'Digest',
+    })
+  } catch (err) {
+    triageFailed = true
+    batchNotes.push(`needsHumanReview triage pass failed (${err && err.message ? err.message : String(err)}) — the digest below falls back to the raw, un-cross-checked needsHumanReview entries already present in each skill's own result.`)
+  }
+}
+
+// Only tell the digest agent to defer to the triage list when triage actually produced one — an
+// empty triage.items because there was genuinely nothing to review (allNeedsHumanReview.length === 0)
+// is fine as-is, but an empty triage.items because the triage CALL ITSELF failed must not be treated
+// the same way, or a triage crash would silently hide every flagged item instead of degrading to the
+// pre-#45 behavior of surfacing them raw (code review finding: this exact confusion was the bug in
+// the first draft of this fix).
+const needsHumanReviewSection = triageFailed
+  ? `needsHumanReview triage did NOT run this batch (see batch-level notes above for why) — fall back
+to the raw per-skill needsHumanReview arrays already present in the results JSON above: surface every
+one of them prominently, exactly as issue #45's motivating incident required, even without a
+verified tracked/untracked cross-check.`
+  : `needsHumanReview triage (issue #45 — each raw needsHumanReview entry cross-checked against this
+batch's actually-filed, GitHub-verified issues/PRs, with a file-or-not recommendation for anything
+not already tracked):
+
+${JSON.stringify(triage.items, null, 2)}
+
+Use this triage list as the primary source for needsHumanReview, not the raw per-skill
+needsHumanReview arrays — for each triage item, surface it prominently with its recommendation
+(already tracked at <url> / file an issue because <rationale> / no issue needed because <rationale>),
+grouped so "needs a new issue filed" items are impossible to miss and "already tracked" items stay
+brief.`
+
 const digest = await agent(
   `Synthesize ONE batch-wide digest from these per-skill results (this is the ONLY summary a human
 will read after this batch — be concrete, not generic):
@@ -1375,12 +1504,15 @@ ${JSON.stringify(results, null, 2)}
 
 Batch-level notes (onboarding, path validation, circuit breaker, Stage B failures): ${JSON.stringify(batchNotes)}
 
+${needsHumanReviewSection}
+
 Include: which skills were processed and their scores, every PR URL (all still open, awaiting
-review — say so explicitly), every GitHub issue filed, every needsHumanReview entry across all
-skills (these matter most — surface them prominently, don't bury them), and any skill that stopped
-early or hit a genuine blocker. If the batch was cut short (circuit breaker or fewer skills selected
-than requested), say so explicitly rather than implying the full batch size was processed.`,
+review — say so explicitly), every GitHub issue filed, and any skill that stopped early or hit a
+genuine blocker. If the batch was cut short (circuit breaker or fewer skills selected than
+requested), say so explicitly rather than implying the full batch size was processed.`,
   { schema: DIGEST_SCHEMA, phase: 'Digest' }
 )
+
+digest.needsHumanReviewTriage = triage.items
 
 return digest
