@@ -1006,6 +1006,12 @@ ${findingsIntro}
    ${evalSchemaPath} §7 for the full convention and why it exists (past runs drifted across five
    different PR-title shapes in the same repo before this was written down).
 
+   Running this commit/push/PR sequence directly — never the interactive
+   \`git-pr-workflows:git-workflow\` skill — is expected on every skill's Stage C; see
+   ${evalSchemaPath} §7's "PR-creation bypasses the interactive git-workflow skill" note for why,
+   and for exactly what still belongs in \`needsHumanReview\` here (do not invent your own reason to
+   flag it beyond what §7 lists).
+
 **Hard, non-negotiable limit: never self-approve or self-merge a PR.** Leave every PR open for human
 review, regardless of how autonomous everything upstream was.`
     : (editResult.hasChanges
@@ -1026,7 +1032,10 @@ wipe this skill's uncommitted work otherwise — leaving nothing for a human to 
 1. Do NOT run the review-findings-apply steps above — there are no findings, because no review ran.
 2. \`git add -A\` (in case anything changed since Stage A staged), then \`git commit\`, push, and open
    the PR exactly as in the normal flow — same fixed \`type(${skillName}): subject\` commit/PR-title
-   format as above, see ${evalSchemaPath} §7.
+   format as above, see ${evalSchemaPath} §7. Same as the normal flow, doing this directly instead
+   of via the interactive \`git-pr-workflows:git-workflow\` skill is expected and is NOT itself a
+   \`needsHumanReview\` reason — see §7's "PR-creation bypasses the interactive git-workflow skill"
+   note. That exception is unrelated to, and does not reduce, step 3's mandatory entry below.
 3. **Mandatory:** add a \`needsHumanReview\` entry stating, verbatim in substance, "this PR was
    committed WITHOUT independent review — Stage A stopped early after staging changes, see
    stopReason above — review this diff with extra scrutiny before merging." This must be prominent,

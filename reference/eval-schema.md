@@ -245,3 +245,18 @@ production bug (`self-improving-skills.md`'s "Nebenbefund" section) uses `fix(mc
 Conventional Commits type rules, different, explicitly-named scope — still consistently
 distinguishable from a per-skill PR at a glance. Do not invent a third ad-hoc scope for a case not
 listed here without adding it here first.
+
+**PR-creation bypasses the interactive `git-pr-workflows:git-workflow` skill — do not flag it.**
+Stage C always creates the commit/PR itself (the `gh api` workaround or `gh pr create`, per the
+plugin playbook's repo facts) instead of invoking the interactive `git-pr-workflows:git-workflow`
+skill. This is not a shortcut taken under pressure — that skill's `AskUserQuestion` checkpoints and
+Task-tool subagent phases are structurally unavailable inside Stage C's unattended subagent context,
+so running the equivalent steps directly is the only mechanism that works there, and it applies to
+**every** skill's Stage C, not a per-skill deviation. Do not add a `needsHumanReview` entry (the
+structured field, or `loop-state.json`'s `needs_human_review`) stating that this happened — it is
+true of every run and tells a human reading the batch digest nothing new. Reserve `needsHumanReview`
+here for something genuinely specific to this run: guessing at the PR-creation mechanism instead of
+reading it from the plugin's onboarded playbook, or a `gh` call itself failing. This exception covers
+only the fact of the bypass — it does NOT excuse any OTHER mandatory `needsHumanReview` entry a given
+branch of Stage C's own logic requires (e.g. the "committed WITHOUT independent review" entry required
+when Stage A stopped early after staging changes — that one stays mandatory regardless).

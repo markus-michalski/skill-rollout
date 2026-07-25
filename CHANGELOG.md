@@ -20,7 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- Stage C no longer logs its standard `git-pr-workflows:git-workflow` bypass as a
+  `needsHumanReview` entry — the bypass is the intended design for every skill's Stage C
+  (AskUserQuestion checkpoints/Task-tool subagent phases are unavailable in that unattended
+  context), and the entry was pure noise that buried genuinely actionable findings in the
+  batch digest. The convention now lives in `reference/eval-schema.md` §7, referenced from
+  both of Stage C's commit branches.
 
 ### Security
 - Nothing yet
