@@ -17,7 +17,7 @@ argument-hint: "{plugin} {count} [max_duration]"
 Unattended, sequential, single-batch runner for the self-improvement-loop process (born out of the
 storyforge rollout, generalized for any Claude plugin). The one-batch-no-auto-chaining design is
 deliberate: after a batch stops, the operator reviews and merges the resulting PRs/issues before the
-next batch is manually invoked — see Step 4 below for how that boundary is enforced.
+next batch is manually invoked — see Step 5 below for how that boundary is enforced.
 
 **Before launching — check Auto Mode is ON.** Without it, individual Bash/MCP tool calls inside the
 batch (including subagent calls made unattended, away from the keyboard) prompt for approval one by
@@ -43,7 +43,7 @@ guarantees the script is checked out LF-only (the Workflow tool rejects a script
   - `skillEvalsDir` — per-plugin eval state AND the per-plugin playbook: everything for one
     target plugin lives at `skillEvalsDir/{plugin}/` — `STATUS.md`, `batch-digest.md`,
     `self-improving-skill-{plugin}.md`, and per-skill `loop-log.md`/`loop-state.json`
-  - `workflowScriptPath` — the in-plugin `workflows/skill-rollout.js` to launch in Step 2
+  - `workflowScriptPath` — the in-plugin `workflows/skill-rollout.js` to launch in Step 3
   - `referenceDir` — the plugin's own versioned generic docs (eval schema + onboarding
     meta-prompt); the workflow reads the schema and onboarding playbook from here
   - `pluginRoot`, `configFile`, `configExists`
@@ -68,7 +68,56 @@ guarantees the script is checked out LF-only (the Workflow tool rejects a script
   an overnight batch. Don't accept `count: "all"` without an explicit confirmation — it's supported
   by the workflow but was never actually the intended usage pattern.
 
-## Step 2: Create an isolated worktree, then launch
+## Step 2: MCP connectivity pre-flight (issue #51)
+
+**Before creating any worktree or spending any agent budget**, confirm the target plugin's MCP
+server (if it has one) is actually connected in THIS session — `enabledPlugins: true` in
+`settings.json` is not proof of that. Toggling a plugin on mid-session does not retroactively
+connect its MCP server; that needs a fresh session (or a `/plugin-toggle` off→on cycle). Skipping
+this check means an entire batch can run its live tier silently as simulated-only, with the gap
+buried in each skill's own `needsHumanReview` note instead of stopping the batch before it starts —
+this happened for real on 2026-07-25 (a 10-skill storyforge batch, stopped by the operator after 4
+skills once the pattern became visible by eye across separate digest entries; all 4 PRs were closed
+and reverted since none of the live-tier claims in them were backed by a real MCP call).
+
+1. Check whether `{pluginRepoPath}/.mcp.json` exists. If it does **not**, also check
+   `{pluginRepoPath}/.claude-plugin/plugin.json`'s `mcpServers` field — it may point somewhere else
+   entirely, or hold the server config inline, rather than defaulting to `./.mcp.json`. Only treat
+   this plugin as MCP-free (skip this whole step) once **both** are confirmed absent — flat
+   skill-collection repos (mm-skills is the reference case) legitimately have neither, but a missing
+   `.mcp.json` alone is not proof of that; don't let this step silently no-op just because the file
+   happened to not be at the default path.
+2. Read whichever of the two actually holds the config and note the declared server name(s) under
+   `mcpServers` — these become the expected tool-name prefix `mcp__plugin_{plugin}_{server-name}__*`
+   (or the equivalent for a project-scoped, non-plugin `.mcp.json`).
+3. Call `ToolSearch` for that server's tools (e.g. a query built from the plugin/server name) in
+   **this session** — the launcher's own, not a subagent's. Check the returned tool **names**
+   actually match the expected prefix from step 2 — `ToolSearch` returns best-effort keyword matches,
+   so a query can return a different plugin's tools that happen to share vocabulary; a schema coming
+   back is not proof it's the right server's schema.
+4. **Schemas matching by name is necessary but not sufficient — the server can be registered but its
+   process already dead** (e.g. a missing venv, or a stale entry in
+   `~/.claude/mcp-needs-auth-cache.json`), in which case its tool schemas are still present in the
+   registry even though nothing responds. Make **one real read-only call** to one of the matched
+   tools (a `list_*`/`get_*`) and confirm it actually returns data, not just that `ToolSearch` found
+   its schema. This is the same check step 5 below already asks the *operator* to do by hand after a
+   failure — doing it here, once, up front, is what actually prevents the failure instead of just
+   detecting it after the fact.
+5. If step 3 found no name-matching tools, OR step 4's real call errors/hangs/fails: **STOP here.**
+   Do not create the worktree, do not launch the Workflow. Tell the operator the target plugin's MCP
+   server isn't connected (or isn't responding) in this session, and that they need to either start a
+   fresh session or run `/plugin-toggle` off→on for the target plugin — then confirm connectivity
+   themselves with one real read-only call before retrying this skill. Do not attempt to work around
+   it (e.g. by proceeding simulated-tier-only without saying so) — that's exactly the silent failure
+   this check exists to prevent.
+6. If the real call in step 4 succeeded: proceed to Step 3.
+
+This is a pre-flight only — it does not replace the workflow script's own per-skill defense-in-depth
+(if a skill's own Stage A independently discovers the server missing from its tool surface, e.g.
+because this check was skipped or the environment changed mid-batch, that surfaces as a loud
+batch-level note in the digest, not just a per-skill aside).
+
+## Step 3: Create an isolated worktree, then launch
 
 **Normalize every path first.** Resolve each path argument to an **absolute, forward-slash** form
 before launching — expand `~` to the real home directory and convert any Windows `\` to `/`. The
@@ -120,7 +169,7 @@ so far. If asked "what's happened so far" while a batch is still running, use th
 {plugin}` skill (or read that file directly) instead of waiting for the workflow's own completion
 notification.
 
-## Step 3: Enforce `max_duration` from outside the workflow
+## Step 4: Enforce `max_duration` from outside the workflow
 
 If `max_duration` was given: call `ScheduleWakeup` for that duration with a reason describing the
 batch being watched. When it fires, check the workflow task's status (`TaskOutput` / the notification
@@ -134,18 +183,18 @@ you'll receive if it already finished on its own).
   stopped may be in a partially-processed state (check its `loop-state.json`/`loop-log.md` next time
   before assuming it's untouched).
 
-## Step 4: Report
+## Step 5: Report
 
-Relay the workflow's digest (or the "stopped by time limit" note from Step 3) to the user directly —
+Relay the workflow's digest (or the "stopped by time limit" note from Step 4) to the user directly —
 **do not start a new batch afterward.** The whole point of this skill, per the concept doc, is
 stopping cleanly at one batch's boundary: the user reviews and merges the resulting PRs/issues
 before the next batch is manually invoked. Never chain into a second `Workflow` call in the same
 invocation.
 
-## Step 5: Remove the isolated worktree
+## Step 6: Remove the isolated worktree
 
-Once the workflow has finished (or was stopped in Step 3), tear down the dedicated worktree created in
-Step 2 — every skill branch was already pushed to the remote as an open PR, so nothing on disk needs
+Once the workflow has finished (or was stopped in Step 4), tear down the dedicated worktree created in
+Step 3 — every skill branch was already pushed to the remote as an open PR, so nothing on disk needs
 to survive:
 
 - `git -C "{pluginRepoPath}" worktree remove --force "{worktreePath}"`
@@ -155,5 +204,5 @@ to survive:
   `git -C "{pluginRepoPath}" for-each-ref --format='%(refname:short)' refs/heads/skill-eval-* | xargs -r git -C "{pluginRepoPath}" branch -D`
 
 Do this even after a time-cut or error stop; a leftover worktree is just clutter and can confuse the
-next run's stale-worktree check in Step 2. (Skipped automatically if you launched without
+next run's stale-worktree check in Step 3. (Skipped automatically if you launched without
 `preIsolated`, i.e. the legacy self-isolating mode, since then no launcher-side worktree exists.)
