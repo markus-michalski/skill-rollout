@@ -1,0 +1,93 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. This helps make the plugin better for everyone.
+
+        Remember: skill-rollout is released under the **PolyForm Noncommercial License 1.0.0**. Proposals must be compatible with non-commercial use cases.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: What type of enhancement is this?
+      options:
+        - New Skill (slash command)
+        - Skill Enhancement
+        - New MCP Tool
+        - MCP Tool Enhancement
+        - Workflow Script (JS) Enhancement
+        - Eval Schema / Tier Classification
+        - Sandbox Gate Logic
+        - New Plugin Support (target plugin type)
+        - Configuration / Setup
+        - CI / GitHub Actions
+        - Documentation
+    validations:
+      required: true
+
+  - type: dropdown
+    id: skill
+    attributes:
+      label: Which skill? (if enhancing existing)
+      description: If this enhances a specific skill, which one?
+      options:
+        - /skill-rollout:run
+        - /skill-rollout:status
+        - /skill-rollout:configure
+        - /skill-rollout:setup
+        - /skill-rollout:help
+        - N/A — this is for a new skill
+    validations:
+      required: false
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What problem does this solve? Why do you need it?
+      placeholder: |
+        When running a batch across a plugin with many BLOCKED skills, there's no way to resume from the last successful skill without re-running everything from scratch.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would this work?
+      placeholder: |
+        Add a --resume flag to the run skill that reads the last completed skill from STATUS.md and starts from the next pending one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Tried other approaches? Why don't they work?
+      placeholder: Manually editing STATUS.md works but is error-prone and breaks the batch-digest audit trail.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Are you willing to help implement this?
+      options:
+        - label: I'd be willing to submit a PR for this feature (requires signing the CLA)
+        - label: I can help test if someone else implements it
+        - label: I can provide more detailed requirements if needed
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Examples, mockups, related issues, or anything else
+    validations:
+      required: false

@@ -20,13 +20,21 @@ SERVER_NAME = "skill-rollout-mcp"
 # outside tools/servers (e.g. a future script in workflows/ or bin/) is exactly
 # the silent-bypass this guard must not have.
 _SCAN_EXCLUDE_DIRS = {
-    ".git", "venv", ".venv", "__pycache__", ".pytest_cache",
-    ".mypy_cache", ".ruff_cache", "build", "dist",
+    ".git",
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "build",
+    "dist",
 }
 _TEXT_IO_FUNCS = {"open", "read_text", "write_text"}
 
 
 # --- MCP launch wrapper ---
+
 
 def test_mcp_command_goes_through_wrapper_not_hardcoded_venv():
     config = json.loads(MCP_JSON.read_text(encoding="utf-8"))
@@ -53,6 +61,7 @@ def test_run_server_cmd_targets_windows_venv():
 
 
 # --- LF/CRLF pinning ---
+
 
 def test_gitattributes_pins_line_endings():
     text = GITATTRIBUTES.read_text(encoding="utf-8")
@@ -133,6 +142,7 @@ def test_all_text_file_io_passes_encoding():
 
 
 # --- Skill OS-branch guard (tolerant: only checks skills that shell out to a venv) ---
+
 
 def test_skills_that_reference_a_venv_interpreter_document_both_platforms():
     """A skill that shells out to a venv interpreter must document BOTH OS paths.
