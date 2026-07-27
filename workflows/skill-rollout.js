@@ -52,7 +52,7 @@ export const meta = {
 // review becomes a real independent reviewer instead of the skill's own agent self-approving its
 // own diff:
 //   Stage A (evalAndEditPrompt): runs Prompt 1/2/3, stages changes (`git add -A`), does NOT commit.
-//   Stage B (reviewPrompt):      independent `git-pr-workflows:code-reviewer` agent reviews the
+//   Stage B (reviewPrompt):      independent `git-pr-workflows:git-pr-workflows-code-reviewer` agent reviews the
 //                                 staged diff cold — no context on why the edits were made. Skipped
 //                                 if Stage A made no changes or stopped early (nothing to review).
 //   Stage C (commitPrompt):      applies Stage B's non-security findings, commits, pushes, opens the
@@ -1494,7 +1494,7 @@ for (const skill of skillsToProcess) {
     try {
       reviewResult = await agent(reviewPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, editResult.worktreePath), {
         label: `review:${skill.name}`,
-        agentType: 'git-pr-workflows:code-reviewer',
+        agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer',
         phase: 'Rollout',
         schema: REVIEW_RESULT_SCHEMA,
       })
