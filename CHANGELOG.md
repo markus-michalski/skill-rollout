@@ -20,11 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Stage B now tries both known reviewer agentType names instead of hardcoding one — a stale local git-pr-workflows plugin cache silently degraded every skill's review to Stage C self-review (#55)
-- Stage B no longer mistakes a null agent() result or a falsy thrown error for a successful review — both previously bypassed the self-review fallback and could auto-commit an unreviewed diff (#55)
+- Nothing yet
 
 ### Security
 - Nothing yet
+
+## [1.4.2] - 2026-07-27
+
+### Fixed
+- try both known reviewer agentType names, close null-result gap (#56)
 
 ## [1.4.1] - 2026-07-27
 
@@ -136,3 +140,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.3.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.3.1
 [1.4.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.0
 [1.4.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.1
+[1.4.2]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.2
