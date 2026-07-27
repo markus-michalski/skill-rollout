@@ -14,7 +14,7 @@ Issue #13 (this file's current target) supersedes that manual-self-review
 design with a REAL independent reviewer: the per-skill rollout is now three
 sibling agent() calls — Stage A (evalAndEditPrompt: eval + edit, stages but
 never commits), Stage B (reviewPrompt: independent review of the staged
-diff, run via `agentType: 'git-pr-workflows:code-reviewer'`), Stage C
+diff, run via `agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer'`), Stage C
 (commitPrompt: applies non-security findings, commits, pushes, opens the PR,
 and does the loop-log/STATUS.md/batch-digest bookkeeping). Stage B's
 agentType call is a TOP-LEVEL sibling call in the workflow script, not a
@@ -83,20 +83,20 @@ def _rollout_loop_source():
 
 def test_review_stage_uses_a_real_independent_reviewer_agenttype():
     """Regression guard for the core issue #13 fix: Stage B must actually spawn
-    an independent `git-pr-workflows:code-reviewer` agent via the Workflow
+    an independent `git-pr-workflows:git-pr-workflows-code-reviewer` agent via the Workflow
     tool's own top-level `agentType` fan-out — not a nested Task/Agent spawn
     (the mechanism issue #12 proved broken), and not a manual self-review
     prose substitute (issue #12's interim fix, now superseded)."""
     loop = _rollout_loop_source()
-    assert "agentType: 'git-pr-workflows:code-reviewer'" in loop, (
+    assert "agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer'" in loop, (
         "expected the review stage's agent() call to use "
-        "agentType: 'git-pr-workflows:code-reviewer' — a top-level sibling "
+        "agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer' — a top-level sibling "
         "call, not a nested spawn from inside another agent"
     )
-    review_call_idx = loop.find("agentType: 'git-pr-workflows:code-reviewer'")
+    review_call_idx = loop.find("agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer'")
     review_prompt_idx = loop.find("reviewPrompt(")
     assert review_prompt_idx != -1 and review_prompt_idx < review_call_idx, (
-        "agentType: 'git-pr-workflows:code-reviewer' must be attached to the "
+        "agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer' must be attached to the "
         "reviewPrompt(...) agent() call, not some other stage"
     )
 

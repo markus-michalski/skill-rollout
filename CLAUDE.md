@@ -52,7 +52,7 @@ a contributor must not break.
   header to the release process; edit `[Unreleased]` only.
 - **Per-skill review expects `git-pr-workflows` enabled (soft dependency).** The
   Rollout phase's review stage spawns an independent reviewer via
-  `agentType: 'git-pr-workflows:code-reviewer'` on a top-level `agent()` call in
+  `agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer'` on a top-level `agent()` call in
   `workflows/skill-rollout.js`. If that plugin is disabled/unavailable and the
   call throws, the pipeline degrades gracefully to an in-prompt manual
   self-review before committing (see `commitPrompt`'s `reviewFailed` branch) —
