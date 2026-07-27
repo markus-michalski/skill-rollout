@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- Stage B now tries both known reviewer agentType names instead of hardcoding one — a stale local git-pr-workflows plugin cache silently degraded every skill's review to Stage C self-review (#55)
+- Stage B no longer mistakes a null agent() result or a falsy thrown error for a successful review — both previously bypassed the self-review fallback and could auto-commit an unreviewed diff (#55)
 
 ### Security
 - Nothing yet

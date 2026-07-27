@@ -14,7 +14,8 @@ Issue #13 (this file's current target) supersedes that manual-self-review
 design with a REAL independent reviewer: the per-skill rollout is now three
 sibling agent() calls — Stage A (evalAndEditPrompt: eval + edit, stages but
 never commits), Stage B (reviewPrompt: independent review of the staged
-diff, run via `agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer'`), Stage C
+diff, run via a top-level agentType fan-out — trying each name in
+REVIEWER_AGENT_CANDIDATES in order, see skill-rollout#55), Stage C
 (commitPrompt: applies non-security findings, commits, pushes, opens the PR,
 and does the loop-log/STATUS.md/batch-digest bookkeeping). Stage B's
 agentType call is a TOP-LEVEL sibling call in the workflow script, not a
@@ -81,24 +82,222 @@ def _rollout_loop_source():
     )
 
 
+def _reviewer_candidates_array_source():
+    return _normalize(
+        _slice_between(_source(), "const REVIEWER_AGENT_CANDIDATES = [", "]\n")
+    )
+
+
+def _reviewer_loop_body_source():
+    """Isolates just the REVIEWER_AGENT_CANDIDATES for-loop's body (not the whole
+    Rollout phase) — the marker pair is exact-string-fragile by design: a future
+    restructure that changes either line should force this helper to be re-verified,
+    not silently start slicing the wrong region."""
+    return _normalize(
+        _slice_between(
+            _source(),
+            "for (const agentType of REVIEWER_AGENT_CANDIDATES) {",
+            "if (!reviewed) {",
+        )
+    )
+
+
+def test_reviewer_candidates_array_lists_both_known_agent_names():
+    """Regression guard for skill-rollout#55: the agent's registered name changed
+    once already (pre-#554 short name -> post-#554 double-prefixed name), and a
+    machine's local plugin cache can independently drift out of sync with
+    whichever name is actually current — confirmed live, this exact mismatch
+    silently degraded Stage B to self-review for 5/5 skills in a real batch.
+
+    Asserts against the ARRAY LITERAL specifically, not the whole file — a `grep
+    the whole file` version of this check would stay green if one candidate were
+    demoted to a comment instead of a real array entry."""
+    candidates = _reviewer_candidates_array_source()
+    assert "'git-pr-workflows:git-pr-workflows-code-reviewer'" in candidates, (
+        "expected the current (post-#554) reviewer agentType name in "
+        "REVIEWER_AGENT_CANDIDATES"
+    )
+    assert "'git-pr-workflows:code-reviewer'" in candidates, (
+        "expected the pre-#554 reviewer agentType name in "
+        "REVIEWER_AGENT_CANDIDATES as a fallback — a stale local plugin cache "
+        "may still have it"
+    )
+
+
+def test_reviewer_flagged_booleans_are_declared_outside_the_skill_loop():
+    """Regression guard for M1/M2's actual mechanism: 'log this once per batch,
+    not once per skill' only works because reviewerFallbackFlagged and
+    reviewerBothCandidatesFailedFlagged are declared ONCE, before the per-skill
+    `for (const skill of skillsToProcess)` loop — not reset on every iteration. A
+    future refactor that moved either declaration inside the skill loop would
+    silently reintroduce per-skill duplicate digest noise, with every existing
+    test (which only checks the flags are SET, never where they're DECLARED)
+    still green."""
+    src = _source()
+    loop_idx = src.find("for (const skill of skillsToProcess)")
+    fallback_decl_idx = src.find("let reviewerFallbackFlagged")
+    both_failed_decl_idx = src.find("let reviewerBothCandidatesFailedFlagged")
+    assert loop_idx != -1, "expected the per-skill rollout loop"
+    assert -1 not in (fallback_decl_idx, both_failed_decl_idx), (
+        "expected both one-time flag declarations"
+    )
+    assert fallback_decl_idx < loop_idx, (
+        "reviewerFallbackFlagged must be declared BEFORE the per-skill loop, "
+        "or it resets every iteration and the 'log once per batch' guarantee breaks"
+    )
+    assert both_failed_decl_idx < loop_idx, (
+        "reviewerBothCandidatesFailedFlagged must be declared BEFORE the "
+        "per-skill loop, or it resets every iteration and the 'log once per "
+        "batch' guarantee breaks"
+    )
+
+
 def test_review_stage_uses_a_real_independent_reviewer_agenttype():
     """Regression guard for the core issue #13 fix: Stage B must actually spawn
-    an independent `git-pr-workflows:git-pr-workflows-code-reviewer` agent via the Workflow
+    an independent git-pr-workflows code-reviewer agent via the Workflow
     tool's own top-level `agentType` fan-out — not a nested Task/Agent spawn
     (the mechanism issue #12 proved broken), and not a manual self-review
-    prose substitute (issue #12's interim fix, now superseded)."""
+    prose substitute (issue #12's interim fix, now superseded).
+
+    Stronger than a "loop marker appears somewhere before reviewPrompt(...) in
+    the whole Rollout phase" check: reviewPrompt(...) and the agentType option
+    must both appear INSIDE the loop body specifically, so a future edit that
+    wraps a *different* agent() call in this loop (while reviewPrompt(...) stays
+    outside it) still fails here."""
+    body = _reviewer_loop_body_source()
+    assert "reviewPrompt(" in body, (
+        "expected the reviewPrompt(...) agent() call inside the "
+        "REVIEWER_AGENT_CANDIDATES loop body, not some other stage"
+    )
+    assert "agentType," in body, (
+        "expected the loop's agentType variable to be passed as the agent() "
+        "call's agentType option, inside the loop body"
+    )
+
+
+def test_reviewer_failure_messages_report_only_actually_attempted_candidates():
+    """Regression guard: the loop can legitimately break after just the FIRST
+    candidate (a null result, or any error that isn't a naming mismatch) — the
+    batchNotes/digest messages must not then claim every entry in
+    REVIEWER_AGENT_CANDIDATES was tried when only one was. Overstating this
+    misleads whoever reads the digest into thinking a perfectly healthy
+    fallback candidate is also broken."""
+    body = _reviewer_loop_body_source()
+    assert "attemptedAgentTypes.push(agentType)" in body, (
+        "expected the loop to track which candidates it actually attempted"
+    )
     loop = _rollout_loop_source()
-    assert "agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer'" in loop, (
-        "expected the review stage's agent() call to use "
-        "agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer' — a top-level sibling "
-        "call, not a nested spawn from inside another agent"
+    assert "REVIEWER_AGENT_CANDIDATES.join" not in loop, (
+        "found REVIEWER_AGENT_CANDIDATES.join(...) in a failure message — this "
+        "always reports the full candidate list regardless of how many were "
+        "actually attempted; use attemptedAgentTypes instead"
     )
-    review_call_idx = loop.find("agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer'")
-    review_prompt_idx = loop.find("reviewPrompt(")
-    assert review_prompt_idx != -1 and review_prompt_idx < review_call_idx, (
-        "agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer' must be attached to the "
-        "reviewPrompt(...) agent() call, not some other stage"
+    assert "attemptedAgentTypes.join" in loop, (
+        "expected failure messages to report attemptedAgentTypes, not the full "
+        "REVIEWER_AGENT_CANDIDATES constant"
     )
+
+
+def test_review_stage_guards_against_agent_returning_null():
+    """Regression guard for code review findings H1/F2 (skill-rollout#55 PR):
+    agent() resolves to null (does NOT throw) on user-skip or a terminal API
+    error after retries (issue #52) — Stage A and Stage C both guard for this,
+    and the REVIEWER_AGENT_CANDIDATES loop must too, or a null resolution
+    silently reads to Stage C as "reviewed, found nothing" and auto-commits an
+    unreviewed diff — the exact failure this whole pipeline exists to prevent."""
+    body = _reviewer_loop_body_source()
+    assert "if (!r)" in body, (
+        "expected an explicit null-guard on the agent() call's resolved value "
+        "inside the loop body — a null result must not be treated as success"
+    )
+
+
+def test_review_stage_success_is_tracked_by_explicit_flag_not_error_truthiness():
+    """Regression guard for code review findings H2/F1: success must be tracked
+    by an explicit boolean, not inferred from whether the last error variable is
+    truthy — a falsy throw (`throw null`/''/0) would otherwise be silently
+    mistaken for success and leave reviewResult on a stale, actively wrong
+    'nothing to review' claim while hasChanges is true."""
+    loop = _rollout_loop_source()
+    assert "let reviewed = false" in loop, (
+        "expected an explicit `reviewed` success flag, separate from lastErr"
+    )
+    assert "if (!reviewed)" in loop, (
+        "expected the reviewFailed/fallback branch to gate on `!reviewed`, "
+        "not on lastErr's truthiness"
+    )
+    assert "if (lastErr)" not in loop, (
+        "found the old truthiness-based gate still present — success must be "
+        "decided by the explicit `reviewed` flag only"
+    )
+
+
+def test_review_stage_retry_predicate_is_not_pinned_to_a_single_exact_phrase():
+    """Regression guard for code review finding H3: the retry condition decides
+    whether a second candidate agentType gets tried at all — pin it to one exact
+    phrase (e.g. only 'not found') and a harness wording change ('unknown agent
+    type', 'not registered', ...) silently reproduces skill-rollout#55 again.
+    This doesn't assert the exact pattern (that's harness-internal and
+    deliberately not a stability contract) — just that it recognizes more than
+    one phrasing of "this name didn't resolve"."""
+    body = _reviewer_loop_body_source()
+    for phrase in ("not found", "unknown", "not registered"):
+        assert phrase in body, (
+            f"expected the retry predicate to recognize {phrase!r} as one of "
+            "several possible naming-resolution failure phrasings"
+        )
+
+
+# Python re-implementation of the JS predicate in the REVIEWER_AGENT_CANDIDATES loop
+# (workflows/skill-rollout.js), for permanent regression coverage — this exact bug
+# class (a naming-resolution retry check too narrow to recognize real harness error
+# text) is *why* this PR exists, and the original manual `node -e` verification (see
+# .git-workflow/03-test-results.md) was one-off, not repeatable. Keep in sync by hand
+# if the JS predicate changes; there is no shared-source mechanism between a Workflow
+# script and pytest.
+_AGENT_TYPE_RE = re.compile(r"agent[\s-]?type", re.IGNORECASE)
+_UNRESOLVED_RE = re.compile(
+    r"(not found|unknown|unrecognized|not registered|does not exist|no such)",
+    re.IGNORECASE,
+)
+
+
+def _is_agent_type_unresolved(message):
+    return bool(_AGENT_TYPE_RE.search(message)) and bool(_UNRESOLVED_RE.search(message))
+
+
+def test_retry_predicate_matches_the_actual_observed_harness_message():
+    """The real text seen live this session (pre-fix), which motivated this whole
+    PR — if a future edit to the predicate stops matching this, it silently
+    reproduces skill-rollout#55."""
+    observed = (
+        "Agent type 'git-pr-workflows:git-pr-workflows-code-reviewer' not found. "
+        "Available agents: backend-api-security:backend-architect, "
+        "git-pr-workflows:code-reviewer, ..."
+    )
+    assert _is_agent_type_unresolved(observed)
+
+
+def test_retry_predicate_handles_failure_word_before_or_after_agent_type():
+    """Regression guard for the specific defect the original single-regex version
+    (`/agent type .* not found/i`, then `/agent[\\s-]?type[\\s\\S]{0,120}?(...)/i`)
+    had: both anchor the failure word strictly AFTER "agent type", so phrasings
+    that put it first ("Unknown agent type: X", "No such agent type X") never
+    matched — silently skipping the fallback candidate on exactly the kind of
+    harness wording change this predicate exists to tolerate."""
+    assert _is_agent_type_unresolved("Unknown agent type: 'x'")
+    assert _is_agent_type_unresolved("No such agent type 'x'")
+    assert _is_agent_type_unresolved("AgentType 'x' not found")
+    assert _is_agent_type_unresolved("agent-type 'x' is not registered")
+
+
+def test_retry_predicate_does_not_match_unrelated_errors():
+    """Negative control: a real crash/timeout must NOT trigger a second-candidate
+    retry — that would double the wait on a doomed retry instead of failing fast
+    into Stage C's self-review fallback."""
+    assert not _is_agent_type_unresolved("ECONNRESET")
+    assert not _is_agent_type_unresolved("Request timed out after 30000ms")
+    assert not _is_agent_type_unresolved("Rate limit exceeded, retry after 60s")
 
 
 def test_stage_b_runs_before_stage_c_in_actual_control_flow():
