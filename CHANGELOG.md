@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Nothing yet
 
+## [1.4.1] - 2026-07-27
+
+### Fixed
+- correct Stage B reviewer agentType to resolvable name (#54)
+
 ## [1.4.0] - 2026-07-26
 
 ### Fixed
@@ -129,3 +134,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.3.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.3.0
 [1.3.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.3.1
 [1.4.0]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.0
+[1.4.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.1
