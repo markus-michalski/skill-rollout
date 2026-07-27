@@ -52,7 +52,8 @@ export const meta = {
 // review becomes a real independent reviewer instead of the skill's own agent self-approving its
 // own diff:
 //   Stage A (evalAndEditPrompt): runs Prompt 1/2/3, stages changes (`git add -A`), does NOT commit.
-//   Stage B (reviewPrompt):      independent `git-pr-workflows:git-pr-workflows-code-reviewer` agent reviews the
+//   Stage B (reviewPrompt):      independent `git-pr-workflows` code-reviewer agent (tries both
+//                                 known agentType names, see REVIEWER_AGENT_CANDIDATES) reviews the
 //                                 staged diff cold — no context on why the edits were made. Skipped
 //                                 if Stage A made no changes or stopped early (nothing to review).
 //   Stage C (commitPrompt):      applies Stage B's non-security findings, commits, pushes, opens the
@@ -129,6 +130,18 @@ const EDIT_RESULT_SCHEMA = {
   },
   required: ['skill', 'hasChanges', 'summary'],
 }
+
+// Stage B's reviewer agentType has changed once already (pre-#554 short name -> post-#554
+// double-prefixed name, to avoid colliding with other plugins' own "code-reviewer" agent), and a
+// machine's locally-cached copy of the git-pr-workflows plugin can independently drift out of sync
+// with whichever convention is actually live there (confirmed: this exact mismatch silently
+// degraded Stage B to Stage C self-review for 5/5 skills in a real batch — see skill-rollout#55).
+// Try both known names in order rather than hardcoding one; only degrade to self-review if neither
+// resolves.
+const REVIEWER_AGENT_CANDIDATES = [
+  'git-pr-workflows:git-pr-workflows-code-reviewer', // current convention, post-#554 collision fix
+  'git-pr-workflows:code-reviewer', // pre-#554 name; still what a stale local cache may have
+]
 
 // Stage B result — independent review of Stage A's staged, uncommitted diff (issue #13).
 const REVIEW_RESULT_SCHEMA = {
@@ -1417,6 +1430,8 @@ if (preIsolated) log(`preIsolated mode: agents work directly in the dedicated wo
 const results = []
 let consecutiveFailures = 0
 let mcpSurfaceAbsentFlagged = false // issue #51: fire the loud rollup once, not once per skill
+let reviewerFallbackFlagged = false // skill-rollout#55: fire the loud "cache is stale" rollup once, not once per skill
+let reviewerBothCandidatesFailedFlagged = false // skill-rollout#55: same, for the "both candidates failed" case
 const FAILURE_CIRCUIT_BREAKER = 3 // stop the batch if this many skills in a row error out or self-report stoppedEarly — almost certainly a systemic problem, not a per-skill fluke
 
 for (const skill of skillsToProcess) {
@@ -1491,20 +1506,79 @@ for (const skill of skillsToProcess) {
   let reviewFailed = false
   if (editResult.hasChanges && !editResult.stoppedEarly) {
     log(`${skill.name} (${positionLabel}): independent review running...`)
-    try {
-      reviewResult = await agent(reviewPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, editResult.worktreePath), {
-        label: `review:${skill.name}`,
-        agentType: 'git-pr-workflows:git-pr-workflows-code-reviewer',
-        phase: 'Rollout',
-        schema: REVIEW_RESULT_SCHEMA,
-      })
-    } catch (err) {
+    // issue #52: agent() resolves to null (does NOT throw) on user-skip or a terminal API error
+    // after retries — Stage A/C both guard for this, this loop must too. A null must never read as
+    // "reviewed, found nothing": that auto-commits an unreviewed diff, the exact failure this
+    // pipeline exists to prevent. `reviewed` (not lastErr's truthiness) is the single source of
+    // truth for success — a falsy throw (`throw null`/''/0) must not be mistaken for success either.
+    let reviewed = false
+    let lastErr = null
+    const attemptedAgentTypes = [] // only what was actually tried — the loop can break after just
+    // the first candidate (null result, or a non-naming-mismatch error), so messages below must
+    // not claim every entry in REVIEWER_AGENT_CANDIDATES was attempted when it wasn't.
+    for (const agentType of REVIEWER_AGENT_CANDIDATES) {
+      attemptedAgentTypes.push(agentType)
+      try {
+        const r = await agent(reviewPrompt(plugin, pluginRepoPath, skill.name, skillEvalsDir, preIsolated, editResult.worktreePath), {
+          label: `review:${skill.name}`,
+          agentType,
+          phase: 'Rollout',
+          schema: REVIEW_RESULT_SCHEMA,
+        })
+        if (!r) {
+          lastErr = new Error(`agent() resolved to null under agentType "${agentType}" (terminal API error or user-skip after retries).`)
+          break // a null is not a naming mismatch — don't burn a second candidate spawn on it
+        }
+        reviewResult = r
+        reviewed = true
+        if (agentType !== REVIEWER_AGENT_CANDIDATES[0] && !reviewerFallbackFlagged) {
+          reviewerFallbackFlagged = true
+          log(`WARNING: ${skill.name} needed the FALLBACK reviewer agentType ("${agentType}") — the primary ("${REVIEWER_AGENT_CANDIDATES[0]}") didn't resolve. This machine's local git-pr-workflows plugin cache is likely stale (see skill-rollout#55); sync it before the next batch so this isn't paying an extra failed spawn per skill.`)
+          batchNotes.push(`Reviewer agentType fallback: first observed on "${skill.name}" — the primary candidate ("${REVIEWER_AGENT_CANDIDATES[0]}") didn't resolve, "${agentType}" did. Likely a stale local git-pr-workflows plugin cache (skill-rollout#55) — worth syncing before the next batch.`)
+        }
+        break
+      } catch (err) {
+        // Normalize a falsy throw (`throw null`/''/0) so the failure below is never skipped on
+        // truthiness — `reviewed` alone decides success, `lastErr` is only for diagnostics.
+        lastErr = err || new Error(`agent() threw a falsy value under agentType "${agentType}".`)
+        // Only retry the next candidate on a naming-resolution failure — a real crash/timeout
+        // should fail fast into self-review, not double the wait on a doomed retry. Deliberately
+        // TWO independent substring checks (mentions "agent type" AND a failure phrase, in either
+        // order/anywhere in the message) rather than one adjacency-anchored regex — "Unknown agent
+        // type: X" and "No such agent type X" put the failure word BEFORE "agent type", which an
+        // "agent type ... <phrase>" pattern would miss entirely. The harness's exact wording has no
+        // stability guarantee; a false negative here silently reproduces skill-rollout#55 for a
+        // whole batch, a false positive costs one extra fast-failing spawn — cheap enough to stay
+        // broad. Confirmed live (this session, pre-fix, real observed text): "Agent type
+        // 'git-pr-workflows:git-pr-workflows-code-reviewer' not found. Available agents: ...,
+        // git-pr-workflows:code-reviewer, ...".
+        const msg = String((lastErr && lastErr.message) || lastErr)
+        const mentionsAgentType = /agent[\s-]?type/i.test(msg)
+        const mentionsUnresolved = /(not found|unknown|unrecognized|not registered|does not exist|no such)/i.test(msg)
+        if (!(mentionsAgentType && mentionsUnresolved)) break
+      }
+    }
+    if (!reviewed) {
       reviewFailed = true
+      const errMsg = lastErr && lastErr.message ? lastErr.message : String(lastErr)
       reviewResult = {
         findings: [],
-        summary: `Stage B (review) agent call threw and was caught: ${err && err.message ? err.message : String(err)}. Stage C will fall back to its own manual review for this skill — flagged below.`,
+        summary: `Stage B (review) agent call threw and was caught: ${errMsg}. Stage C will fall back to its own manual review for this skill — flagged below.`,
       }
-      batchNotes.push(`${skill.name}: Stage B (independent review) failed — Stage C fell back to a manual self-review before committing. See loop-log for detail.`)
+      batchNotes.push(`${skill.name}: Stage B (independent review) failed after trying ${attemptedAgentTypes.join(', ')} — ${errMsg}. Stage C fell back to a manual self-review before committing.`)
+      // Only claim "every candidate failed" if the loop actually reached all of them — a
+      // non-naming-mismatch error (real crash/timeout, or a null result) breaks after the FIRST
+      // candidate by design (see the comments above), so attemptedAgentTypes can legitimately be
+      // shorter than REVIEWER_AGENT_CANDIDATES. Overstating this misleads whoever reads the digest
+      // into thinking the fallback candidate is also broken when it was never even tried.
+      const allCandidatesAttempted = attemptedAgentTypes.length === REVIEWER_AGENT_CANDIDATES.length
+      if (!reviewerBothCandidatesFailedFlagged) {
+        reviewerBothCandidatesFailedFlagged = true
+        const candidateSummary = allCandidatesAttempted
+          ? `ALL candidates (${attemptedAgentTypes.join(', ')})`
+          : `"${attemptedAgentTypes.join(', ')}" (the rest of REVIEWER_AGENT_CANDIDATES was never tried — this error wasn't a naming mismatch, so the loop stopped early)`
+        batchNotes.push(`Reviewer agentType: ${candidateSummary} failed for at least one skill in this batch ("${skill.name}") — likely an environment problem (git-pr-workflows plugin disabled/unavailable, or an unrelated crash), not a per-skill fluke. Subsequent skills hitting the same failure won't repeat this rollup note.`)
+      }
     }
   }
 
