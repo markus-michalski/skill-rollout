@@ -20,7 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- `run`'s Step 3 no longer force-removes a stale rollout worktree unconditionally. It now confirms
+  the worktree is actually registered (vs. a stray leftover directory), checks for uncommitted
+  changes (exit code AND output, not output alone), and if dirty, commits them to a verified,
+  timestamped rescue branch before removing anything — with an explicit stop if the rescue can't be
+  verified. Stray non-worktree directories get a safe direct cleanup instead of being routed through
+  the worktree logic. The same guard now also applies to Step 6's teardown, including aborting the
+  whole step if the dirty-check stops rather than continuing on to branch cleanup. (#57)
 
 ### Security
 - Nothing yet
