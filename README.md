@@ -16,7 +16,11 @@ per-plugin eval state is queryable over MCP.
   batch. Stops after `count` skills or `max_duration`, whichever comes first.
 - **Isolated** — the launcher creates one dedicated git worktree up front and
   hands it to the workflow, so unattended runs never collide with a concurrent
-  session in the same repo.
+  session in the same repo. If a prior batch was interrupted with uncommitted
+  work still sitting in that worktree, the next run rescues it to a
+  `rescue/{plugin}-<timestamp>` branch instead of discarding it — these are
+  never auto-deleted, so clean them up (or `git show` the tip commit and
+  cherry-pick) once reviewed.
 - **Never auto-chains** — one batch, then stop. The operator reviews and merges
   the resulting PRs before the next batch is manually invoked.
 - **Queryable state** — an MCP server exposes config resolution and the running

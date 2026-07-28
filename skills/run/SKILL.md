@@ -143,9 +143,96 @@ then pass as the `pluginRepoPath` *argument* to the workflow.
 2. Resolve the repo's default branch — do not assume `main`:
    `git -C "{pluginRepoPath}" symbolic-ref --short refs/remotes/origin/HEAD` yields `origin/<branch>`;
    strip the `origin/` prefix and call the result `{defaultBranch}`.
-3. Create the worktree detached at that remote default branch. If a stale one from a prior run
-   exists, remove it first:
-   - `git -C "{pluginRepoPath}" worktree remove --force "{worktreePath}" 2>/dev/null; true`
+3. **The Step 3 dirty-check-and-rescue procedure (issue #57), also required by Step 6 below — this
+   item ONLY, not item 4 next.** This procedure needs a POSIX-compatible shell (Git Bash on
+   Windows, per the same Git Bash already relied on above) — it uses `test -e`, `rm -rf`,
+   `$(date ...)`, and shell variable assignment/capture, none of which are valid PowerShell or
+   `cmd.exe` syntax. If the Bash tool resolves to PowerShell in this environment, do not attempt a
+   literal PowerShell translation on the fly — stop and tell the operator this procedure needs a
+   POSIX shell, the same requirement the rest of this skill already has for worktree paths. Before
+   removing any stale worktree, check whether it's dirty. A
+   prior batch may have left staged-but-uncommitted (or working-tree-modified) changes there — e.g.
+   because Stage C received a wrong `hasChanges:false` handoff and skipped committing a real,
+   already-verified diff. Force-removing that worktree unconditionally destroys it silently, with no
+   recovery path. This item ends either with the worktree removed (clean, or dirty-and-rescued-and-verified),
+   with nothing to do at all, or with an explicit STOP — item 4's fetch/create only runs after item 3
+   ends in an actual removal or a confirmed nothing-to-remove, never after a STOP.
+   - **Confirm `{worktreePath}` is actually a registered worktree first**, not just a same-named
+     leftover directory (an aborted `worktree add`, a `prune`-orphaned folder, or anything with its
+     own `.git` missing would make git's repo-discovery walk up to a PARENT repo instead, and any
+     command below would then silently operate on the wrong repository). Run
+     `git -C "{pluginRepoPath}" worktree list --porcelain` and note whether `{worktreePath}` is
+     listed, and if so whether its entry is tagged `prunable` (git's own signal that the worktree
+     directory is already gone from disk). Then run `git -C "{pluginRepoPath}" worktree prune`
+     unconditionally (safe, only forgets already-gone worktrees) — but branch below on what the
+     LIST said, not on a fresh list taken after pruning.
+     Also check for a `.git` **file** (a linked worktree's `.git` is a file pointing at the main
+     repo's `.git/worktrees/...`, never a directory — `test -d` would wrongly say "no .git" for a
+     real worktree): `test -e "{worktreePath}/.git"`.
+     - **Not in the list at all, and `{worktreePath}` doesn't exist on disk:** nothing to do — skip
+       straight to item 4.
+     - **In the list but tagged `prunable` (or listed yet `{worktreePath}` doesn't exist on disk):**
+       the prune above already cleaned this up — there is nothing on disk to check or rescue. Skip
+       straight to item 4. (Without this branch, a worktree whose directory was deleted by hand
+       falls through to the registered-worktree status check below, which then errors, is
+       misread as "dirty", and dead-ends the whole batch on a STOP over nothing.)
+     - **Not in the list, `{worktreePath}` DOES exist on disk, and `test -e "{worktreePath}/.git"`
+       fails (no `.git`):** a stray, non-worktree directory (e.g. an interrupted `worktree add`) — it
+       cannot be a real git worktree without a `.git` entry, so there is nothing to rescue and no
+       repo-discovery risk. **Before deleting, sanity-check the path itself**: confirm
+       `{worktreePath}` is non-empty, is an absolute path, ends in the `-rollout-wt` suffix chosen in
+       item 1, and is NOT equal to `{pluginRepoPath}`. If any of those checks fail, **STOP** instead —
+       do not guess at a path that doesn't look like the one this skill created. Otherwise remove it
+       directly, then proceed to item 4: `rm -rf "{worktreePath}"`.
+     - **Not in the list, but `test -e "{worktreePath}/.git"` succeeds:** an unusual, likely-corrupted
+       state (something with a `.git` that git itself no longer recognizes as a registered worktree)
+       — do not guess, and do NOT `rm -rf` it. **STOP.** Leave it in place and tell the operator it
+       needs manual inspection before this skill can proceed for `{plugin}`.
+   - **If it IS in the list and NOT tagged `prunable`** (a real, on-disk registered worktree), run
+     `git -C "{worktreePath}" status --porcelain` and check **both its exit code and its output** —
+     do not judge cleanliness from output alone. A non-zero exit code (broken `.git`, `index.lock`
+     contention, permission error) is NOT the same as clean; an agent that only looks at stdout can't
+     tell them apart, since both can print nothing, and failing to distinguish them means failing
+     OPEN onto the destructive remove path.
+   - **Clean (exit code `0` AND empty output):** remove it —
+     `git -C "{pluginRepoPath}" worktree remove --force "{worktreePath}"`. Check this command's own
+     exit code too: if it fails (e.g. the worktree is locked), **STOP** here rather than silently
+     continuing to item 4, which would otherwise fail on "already exists" with no context.
+   - **Dirty (exit code `0`, non-empty output) OR the status check itself errored:** do NOT discard
+     it. Rescue, then verify the rescue actually worked BEFORE removing anything:
+     - Create the branch AND capture its exact name in the SAME command, since its output is the
+       only place the literal timestamp is ever visible to the agent — later steps and Step 5/6's
+       report both need this exact name, not a guess at "the newest one":
+       `git -C "{worktreePath}" add -A`, then
+       `git -C "{worktreePath}" commit --no-verify -m "rescue: uncommitted changes from interrupted batch"`
+       — `--no-verify` is required: an interrupted batch's WIP diff is exactly the kind of
+       not-yet-lint-clean state a pre-commit/lint hook in the target repo is likely to reject, and
+       this is a data-preservation snapshot, not a real commit that should be gated by the repo's own
+       quality gates — then in one call:
+       `RESCUE_NAME="rescue/{plugin}-$(date +%Y%m%d-%H%M%S)"; git -C "{worktreePath}" branch
+       "$RESCUE_NAME"; echo "$RESCUE_NAME"`. Record the echoed value verbatim — this is the exact
+       branch name to report later, not the pattern.
+     - **Verify before removing anything, do not just assume the commit succeeded**: `git branch`
+       creates a ref at current HEAD regardless of whether the preceding commit actually landed, so
+       re-check `git -C "{worktreePath}" status --porcelain` is now exit `0` AND empty, AND that
+       `git -C "{pluginRepoPath}" branch --list "rescue/{plugin}-*"` includes the exact
+       `$RESCUE_NAME` captured above. (The `--list` glob is used here only because the create and
+       verify are separate tool calls with no shared shell state across them — a second
+       `$(date ...)` expansion in a fresh verify command would not reliably reproduce the first
+       one's literal timestamp; the actual identity check is against the captured, echoed name.)
+     - If **either** verification fails: **STOP. Leave the worktree in place, untouched** — do not
+       remove it, do not proceed to item 4. Tell the operator the rescue could not be verified (e.g.
+       a hook or lock issue) and the worktree needs manual attention. A worktree left on disk is
+       harmless clutter; a worktree removed on an unverified rescue is data loss with a false
+       all-clear.
+     - Only once both verifications pass:
+       `git -C "{pluginRepoPath}" worktree remove --force "{worktreePath}"`.
+     Report `$RESCUE_NAME` to the operator (Step 5, or Step 6's addendum if this ran during
+     teardown) — including a note that `status --porcelain` also picks up untracked files, so the
+     operator should confirm the branch holds a real diff and not just incidental build artifacts
+     before acting on it.
+4. **Only once item 3 above ended in an actual removal or a confirmed nothing-to-remove (never after
+   its STOP branch), create the fresh worktree:**
    - `git -C "{pluginRepoPath}" fetch origin`
    - `git -C "{pluginRepoPath}" worktree add --detach "{worktreePath}" origin/{defaultBranch}`
 
@@ -191,18 +278,50 @@ stopping cleanly at one batch's boundary: the user reviews and merges the result
 before the next batch is manually invoked. Never chain into a second `Workflow` call in the same
 invocation.
 
+If Step 3 found a dirty stale worktree and created a rescue branch, say so explicitly here — name
+the branch and tell the operator it holds an interrupted prior batch's uncommitted diff and needs
+manual review (cherry-pick, re-run, or discard), since nothing in this skill's own machinery does
+that for a rescue branch. Tell them to inspect it with `git show <rescue-branch>` (the tip commit is
+always exactly the rescued diff) rather than diffing against the default branch — in `preIsolated`
+mode the worktree runs on a per-skill `skill-eval-{skillName}` branch, not detached, so the rescue
+branch may carry other in-progress history from that same skill run underneath the rescue commit.
+Also note these branches are never auto-deleted (unlike the `skill-eval-*` cleanup below) — that's
+intentional, but it means they accumulate across runs until the operator clears the ones they've
+already handled.
+
 ## Step 6: Remove the isolated worktree
 
 Once the workflow has finished (or was stopped in Step 4), tear down the dedicated worktree created in
-Step 3 — every skill branch was already pushed to the remote as an open PR, so nothing on disk needs
-to survive:
+Step 3. Normally every skill branch was already pushed to the remote as an open PR, so nothing on
+disk needs to survive — but **run Step 3 item 3's full dirty-check-and-rescue procedure (registered-worktree
+check, `status --porcelain` exit-code-and-output check, clean-vs-dirty branch, rescue + verify,
+STOP-if-unverified) against `{worktreePath}` again, right here, before removing it (issue #57) — NOT
+item 4's fetch/create, just item 3's check-and-remove.** This is not optional just because
+this is the end of a normal run: Step 4 already acknowledges a `TaskStop`-cut batch can leave a skill
+"in a partially-processed state", which is precisely the case this teardown must not blindly discard.
+**There is no separate bare `worktree remove --force` command for this step** — the removal that
+fires is whichever one item 3's procedure produces (its clean-path command, or its post-rescue
+command after verification passes); do not substitute an unconditional remove in its place.
 
-- `git -C "{pluginRepoPath}" worktree remove --force "{worktreePath}"`
+**If item 3's procedure ends in a STOP here, stop this whole step too** — do not run the
+`worktree prune` or `skill-eval-*` branch-deletion bullets below. Both operate on the same worktree
+and its branches; git's own protections against deleting a branch checked out in a worktree only
+apply while that worktree is still *registered* (exactly the state item 3 refused to disturb), so
+running them anyway can silently delete the very branch item 3 just decided not to touch. Report the
+STOP to the operator and leave everything else in this step undone.
+
+If item 3's procedure creates a rescue branch during THIS run of it (as opposed to during Step 3's
+own launch-time run), report that rescue branch to the operator as an addendum here too — Step 5's
+report was already delivered before this teardown ran, so a teardown-time rescue has no other
+reporting path, and a `TaskStop`-cut batch (the case this step's own opening paragraph calls out) is
+if anything the MORE likely time for one to happen.
+
 - `git -C "{pluginRepoPath}" worktree prune`
 - Optionally delete the local `skill-eval-*` branches the run created (the real artifacts are the
   pushed PRs, so these are just local clutter; they'd otherwise accumulate across runs):
   `git -C "{pluginRepoPath}" for-each-ref --format='%(refname:short)' refs/heads/skill-eval-* | xargs -r git -C "{pluginRepoPath}" branch -D`
 
-Do this even after a time-cut or error stop; a leftover worktree is just clutter and can confuse the
-next run's stale-worktree check in Step 3. (Skipped automatically if you launched without
+Do this even after a time-cut or error stop, subject to the dirty-check-and-rescue procedure above —
+a leftover CLEAN worktree is just clutter, but the next run's Step 3 will now rescue rather than get
+confused by a leftover DIRTY one either way. (Skipped automatically if you launched without
 `preIsolated`, i.e. the legacy self-isolating mode, since then no launcher-side worktree exists.)
