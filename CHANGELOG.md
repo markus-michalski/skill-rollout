@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mcp>=2.0.0,<3.0.0`). **Existing installs must re-run `/skill-rollout:setup`
   once after updating** — otherwise the MCP server fails to start against the
   stale 1.x venv. (#59)
+- `reference/self-improving-skills.md` and `reference/prompt-self-improving-skill-playbook.md`:
+  added a mandatory global-singleton-invariant audit step for anyone implementing
+  `create-testdata`/`reset-testdata`/`delete-testdata`, plus a documented Option A vs. B
+  re-evaluation, following up on life-hub's `is_self` near-miss (life-hub#16). Re-audited
+  project-hub, storyforge, and vidcraft — project-hub has a second, currently-unmitigated-but-unused
+  singleton (`session` table); no plugin has an unmitigated case that reaches real data; Option B
+  stays deferred. (#61)
 
 ### Deprecated
 - Nothing yet

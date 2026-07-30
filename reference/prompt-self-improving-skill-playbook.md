@@ -322,6 +322,16 @@ each playbook's facts are specific to its own repo.
      section for the exact mechanics and the mandatory capture-before-write rule for any singleton
      tool call. Do not inline that mechanics text again here; point at the source section so the two
      copies cannot drift apart.
+
+     **Global-singleton audit still applies even though this branch already passed 3a (issue #61):**
+     3a's discovery/static/live checks verify the prefix guard, not whether the plugin's own data
+     model has a global-singleton invariant a prefix guard structurally cannot protect (life-hub's
+     `is_self` near-miss — see {referenceDir}/self-improving-skills.md's "Pflicht-Audit: globale
+     Singleton-Invarianten" section). Before treating a plugin whose three skills predate that
+     section as fully verified, confirm its {skillEvalsDir}/{plugin-name}/ history (or the skill's
+     own PR) documents this audit — a positive finding with the required snapshot/restore, or an
+     explicit documented negative. If neither exists, file it as a follow-up per-plugin issue (same
+     text requirement as outcome 3 below) rather than silently assuming it was covered.
   3. MCP server exists AND step 3a's checks did NOT all pass (the default until a plugin actually
      implements and verifies the `create-testdata`/`reset-testdata`/`delete-testdata` convention —
      regardless of whether its subject matter sounds fictional or real-world) → do **NOT** generate a
@@ -335,6 +345,16 @@ each playbook's facts are specific to its own repo.
      plugin. No "have a conversation" step; this is a buildable engineering task, not an undefined
      social one. This blocked state is mandatory, not a suggestion the runner can skip past — Prompt 2
      (simulated tier) still runs fully, only Prompt 3 is gated.
+
+     **The per-plugin issue must name the global-singleton audit explicitly (issue #61).** When
+     drafting the per-plugin issue text (or checking an existing one), make sure it includes a line
+     asking the implementer to run the global-singleton audit from
+     {referenceDir}/self-improving-skills.md's "Pflicht-Audit: globale Singleton-Invarianten" section
+     before designing `reset-testdata`/`delete-testdata` (background: life-hub#16's `is_self`
+     near-miss — see that section for the full story and the required snapshot/restore pattern). Do
+     not silently omit this from the issue text just because the plugin's storage looks unlikely to
+     have one — a documented negative finding ("audited, none found") is an acceptable and expected
+     outcome too, an undocumented skip is not.
 
      **This plugin-level block is not necessarily final per-skill (issue #24):** at rollout time,
      `workflows/skill-rollout.js`'s Stage A checks each individual skill's OWN domain-tool surface
