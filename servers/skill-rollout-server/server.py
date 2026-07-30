@@ -8,23 +8,30 @@ re-derive paths or hand-parse markdown.
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from typing import Any
+
+from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
 
 from tools.shared.config import resolve_config
 from tools.state.parsers import get_batch_status, get_eval_state, list_evals
 
-mcp = FastMCP("skill-rollout-mcp")
+mcp = MCPServer("skill-rollout-mcp")
 
 
-@mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
-)
-def tool_resolve_config() -> dict:
+def _read_only() -> ToolAnnotations:
+    """Fresh ToolAnnotations per tool — instances are mutable, so tools must
+    not share one, even though every tool here happens to be read-only."""
+    return ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
+    )
+
+
+@mcp.tool(annotations=_read_only())
+def tool_resolve_config() -> dict[str, Any]:
     """Resolve machine-specific paths for a rollout run.
 
     Returns skillEvalsDir, workflowScriptPath (the workflow.js shipped inside
@@ -35,15 +42,8 @@ def tool_resolve_config() -> dict:
     return resolve_config()
 
 
-@mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
-)
-def tool_list_evals(plugin: str) -> dict:
+@mcp.tool(annotations=_read_only())
+def tool_list_evals(plugin: str) -> dict[str, Any]:
     """List the eval status of every skill for a plugin.
 
     Parses {skillEvalsDir}/{plugin}/STATUS.md. Returns one row per skill with
@@ -56,15 +56,8 @@ def tool_list_evals(plugin: str) -> dict:
     return list_evals(plugin)
 
 
-@mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
-)
-def tool_get_batch_status(plugin: str) -> dict:
+@mcp.tool(annotations=_read_only())
+def tool_get_batch_status(plugin: str) -> dict[str, Any]:
     """Return the running batch digest for a plugin.
 
     Reads {skillEvalsDir}/{plugin}/batch-digest.md verbatim — the file each
@@ -77,15 +70,8 @@ def tool_get_batch_status(plugin: str) -> dict:
     return get_batch_status(plugin)
 
 
-@mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
-)
-def tool_get_eval_state(plugin: str, skill: str) -> dict:
+@mcp.tool(annotations=_read_only())
+def tool_get_eval_state(plugin: str, skill: str) -> dict[str, Any]:
     """Return the per-skill loop state for resuming a rollout.
 
     Reads loop-state.json (parsed) and the tail of loop-log.md for one skill, so

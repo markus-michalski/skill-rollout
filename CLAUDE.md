@@ -70,7 +70,7 @@ a contributor must not break.
 bin/run-server(.cmd)                # OS-agnostic launch wrapper
 config/config.example.yaml          # config template
 skills/{run,status,setup,configure,help}/SKILL.md
-servers/skill-rollout-server/       # FastMCP stdio server
+servers/skill-rollout-server/       # MCP stdio server (mcp SDK 2.x)
 tools/shared/config.py              # resolve_config()
 tools/state/parsers.py              # STATUS.md / batch-digest / loop-state readers
 workflows/skill-rollout.js          # the batch workflow (ships in-plugin)

@@ -23,5 +23,7 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Ruff
         run: ruff check .
+      - name: Mypy
+        run: mypy .
       - name: Smoke tests
         run: pytest tests/smoke -q
