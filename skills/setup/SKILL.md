@@ -122,9 +122,18 @@ escape `SyntaxError`:
 
 ```python
 import sys
+from importlib.metadata import version
+
 sys.path.insert(0, r'${CLAUDE_PLUGIN_ROOT}/servers/skill-rollout-server')
 sys.path.insert(0, r'${CLAUDE_PLUGIN_ROOT}')
-import mcp  # noqa: F401
+
+mcp_version = version("mcp")
+if not mcp_version.startswith("2."):
+    sys.exit(
+        f"MCP: STALE (mcp {mcp_version} installed, needs 2.x — Step 4 did not "
+        "upgrade it, check pip/network)"
+    )
+
 import yaml  # noqa: F401
 from server import mcp as srv  # noqa: F401
 print('MCP: OK')

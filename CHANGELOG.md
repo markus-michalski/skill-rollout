@@ -11,7 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Changed
-- Nothing yet
+- MCP server migrated to `mcp` SDK 2.x (`requirements.txt` now pins
+  `mcp>=2.0.0,<3.0.0`). **Existing installs must re-run `/skill-rollout:setup`
+  once after updating** — otherwise the MCP server fails to start against the
+  stale 1.x venv. (#59)
 
 ### Deprecated
 - Nothing yet
