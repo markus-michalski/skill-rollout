@@ -11,17 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Changed
-- MCP server migrated to `mcp` SDK 2.x (`requirements.txt` now pins
-  `mcp>=2.0.0,<3.0.0`). **Existing installs must re-run `/skill-rollout:setup`
-  once after updating** — otherwise the MCP server fails to start against the
-  stale 1.x venv. (#59)
-- `reference/self-improving-skills.md` and `reference/prompt-self-improving-skill-playbook.md`:
-  added a mandatory global-singleton-invariant audit step for anyone implementing
-  `create-testdata`/`reset-testdata`/`delete-testdata`, plus a documented Option A vs. B
-  re-evaluation, following up on life-hub's `is_self` near-miss (life-hub#16). Re-audited
-  project-hub, storyforge, and vidcraft — project-hub has a second, currently-unmitigated-but-unused
-  singleton (`session` table); no plugin has an unmitigated case that reaches real data; Option B
-  stays deferred. (#61)
+- Nothing yet
 
 ### Deprecated
 - Nothing yet
@@ -34,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - Nothing yet
+
+## [1.4.4] - 2026-07-30
+
+### Changed
+- require a global-singleton audit before building testdata skills (#62)
+
+### Fixed
+- migrate FastMCP to MCPServer, pin SDK (#60)
 
 ## [1.4.3] - 2026-07-28
 
@@ -157,3 +155,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.4.1]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.1
 [1.4.2]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.2
 [1.4.3]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.3
+[1.4.4]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.4
