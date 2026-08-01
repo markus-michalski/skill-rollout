@@ -317,9 +317,40 @@ reporting path, and a `TaskStop`-cut batch (the case this step's own opening par
 if anything the MORE likely time for one to happen.
 
 - `git -C "{pluginRepoPath}" worktree prune`
-- Optionally delete the local `skill-eval-*` branches the run created (the real artifacts are the
-  pushed PRs, so these are just local clutter; they'd otherwise accumulate across runs):
-  `git -C "{pluginRepoPath}" for-each-ref --format='%(refname:short)' refs/heads/skill-eval-* | xargs -r git -C "{pluginRepoPath}" branch -D`
+- Delete the local `skill-eval-*` branches the run created — but ONLY the ones actually confirmed
+  pushed to origin (issue #64's `prePushExistenceCheck` can leave a skill's own commit sitting
+  purely LOCAL, unpushed, on a branch it deliberately did not push, with an explicit
+  `needsHumanReview` entry promising a human that commit is still there to reconcile; an
+  unconditional `branch -D` here silently breaks that promise and destroys the only copy — the real
+  artifacts are the pushed PRs, so an ALREADY-PUSHED local branch is genuinely just clutter, but an
+  unpushed one is the one piece of this skill's own work that survived a blocked push). For each
+  local `skill-eval-*` branch, compare its tip against the matching branch on origin and only
+  force-delete it if they're identical — otherwise leave it and report it. **First confirm this repo
+  actually has an `origin` remote at all** — a flat skill-collection repo (mm-skills is the reference
+  case) legitimately has no GitHub remote and no PR workflow, so every `ls-remote` below would fail
+  for that reason alone, not because anything is actually unpushed; without this upfront check the
+  loop would report every single local `skill-eval-*` branch as needing reconciliation, every run,
+  purely from that one structural fact:
+  ```
+  if ! git -C "{pluginRepoPath}" remote get-url origin >/dev/null 2>&1; then
+    echo "No 'origin' remote — nothing to compare local skill-eval-* branches against, keeping all of them (this is expected for a flat, non-GitHub skill-collection repo)"
+  else
+    for b in $(git -C "{pluginRepoPath}" for-each-ref --format='%(refname:short)' refs/heads/skill-eval-*); do
+      local_sha=$(git -C "{pluginRepoPath}" rev-parse "$b")
+      remote_sha=$(git -C "{pluginRepoPath}" ls-remote --heads origin "$b" | cut -f1)
+      if [ -n "$remote_sha" ] && [ "$local_sha" = "$remote_sha" ]; then
+        git -C "{pluginRepoPath}" branch -D "$b"
+      else
+        echo "KEEPING $b (local $local_sha, remote ${remote_sha:-none}) — not confirmed pushed, needs manual reconciliation"
+      fi
+    done
+  fi
+  ```
+  (POSIX shell, same requirement as Step 3 item 3 above.) Any branch this loop reports as kept — for
+  a repo that DOES have an origin remote — is a skill whose commit survived a blocked push (per issue
+  #64) or otherwise never made it to origin; add it to this step's own report to the operator, the
+  same way a teardown-time rescue branch gets reported as an addendum here. The no-origin case above
+  is a one-line structural note, not a per-branch reconciliation flag — do not report it the same way.
 
 Do this even after a time-cut or error stop, subject to the dirty-check-and-rescue procedure above —
 a leftover CLEAN worktree is just clutter, but the next run's Step 3 will now rescue rather than get

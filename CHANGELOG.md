@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- verify the shared preIsolated worktree actually advanced to this skill's own branch before Stage A touches any file (#63)
+- check for a pre-existing remote branch before Stage C's first push, instead of pushing blind (#64)
+- live-verify batch candidates against open PRs before selecting them, instead of trusting STATUS.md's symbols alone (#65)
 
 ### Security
 - Nothing yet

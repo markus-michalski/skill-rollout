@@ -93,6 +93,11 @@ const SELECTION_SCHEMA = {
         required: ['name', 'simulatedDone', 'liveDone'],
       },
     },
+    excludedOpenPrSkills: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'issue #65: notes from the live-PR-check pass over STATUS.md-eligible candidates. TWO distinct entry shapes, both go in this same array: (1) an ACTUAL exclusion — a candidate dropped because it already has an open PR — format "skillName: excluded, open PR at <PR URL>"; (2) a live-check FAILURE (gh not installed/authenticated/etc) where the skill was still KEPT in the batch on trust — format "skillName: live-check failed (<reason>), trusted STATUS.md instead, still included". The word "included"/"excluded" in each entry is what distinguishes the two — do not conflate a failed check with a real exclusion when reading this array back. Empty array if nothing was excluded and every check succeeded. This is the ONLY place either kind of note is recorded — without it, an excluded skill silently vanishes from the batch with no trace, and a failed check looks identical to a check that was never attempted.',
+    },
   },
   required: ['pluginRepoPathExists', 'onboardingNeeded', 'skills'],
 }
@@ -284,6 +289,20 @@ function isValidPluginSlug(name) {
   return typeof name === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(name)
 }
 
+// Same defense-in-depth as isValidPluginSlug above, applied to skill names (code review finding on
+// issues #63/#64/#65's own fixes). skillName is interpolated unquoted into shell command text at
+// several points (`git checkout -f -B skill-eval-${skillName}`, `git ls-remote ... skill-eval-
+// ${skillName}`, the commit/PR title `type(${skillName}): subject`) — unlike `plugin`, it is NOT
+// something a human typed into the run skill's Step 1; it comes from an LLM's own read of STATUS.md
+// rows and a directory listing (SELECTION_SCHEMA.skills[].name), one layer further from a trusted
+// human input than the plugin slug already validated above. Slightly more permissive than the plugin
+// slug (allows `.` and `_`, matching real skill-directory-name conventions seen in this repo, e.g.
+// `create-testdata`) but still rejects anything that could break out of a `skill-eval-{name}` shell
+// token. Malformed names are dropped into batchNotes for visibility rather than silently vanishing.
+function isValidSkillSlug(name) {
+  return typeof name === 'string' && /^[a-z0-9][a-z0-9._-]*$/.test(name)
+}
+
 // The three fixed-name testdata-convention skills (issue #35) get a special-case Stage A instead of
 // the normal Prompt 1/2/3 flow — see testdataSkillEvalAndEditPrompt below for why: they're the
 // sandbox mechanism itself, and their own live cases would otherwise collide with leftover state
@@ -401,6 +420,75 @@ instruction, and add a \`needsHumanReview\` entry naming the specific playbook f
 a human corrects the doc once instead of every future skill re-discovering the same trap.`
 }
 
+// Shared pre-push existence check for Stage C's own FIRST push of skill-eval-{skillName} (issue
+// #64). Confirmed incident: a life-hub rollout batch's `add-person` PR needed a manual merge-commit
+// reconciliation before it could be pushed cleanly — `origin/skill-eval-add-person` already had an
+// unreviewed commit on it (most likely a duplicate/interrupted earlier Stage C dispatch for the SAME
+// skill) before this run's own Stage C tried to push. The reconciliation happened to land on the
+// correct, fully-reviewed version, but it was undocumented and ad hoc — nothing told the agent to
+// check for this, or what to do if found, so a future occurrence would have to freelance the same
+// recovery again. In preIsolated mode this branch is always freshly created off origin/main by
+// Stage A's own branch-reset (see isolationSection's preIsolated+create branch, issue #63) — under
+// normal operation it has NEVER existed on origin before Stage C's push right here, so finding it
+// already there is itself the anomaly worth stopping for, not something to push through or guess a
+// reconciliation for. Interpolated at BOTH of Stage C's push sites (the normal reviewed-and-committed
+// path, and the "Stage A stopped early, commit AS-IS" path) — same precedent as
+// skillEvalsGitSafety/deploySyncGuardrail above, so the two call sites can't drift apart on this rule.
+//
+// `preIsolated` gates applicability, not just phrasing: the literal `skill-eval-{skillName}` branch
+// name is only guaranteed in preIsolated mode (isolationSection's preIsolated+create branch does the
+// literal `git checkout -f -B skill-eval-${skillName}`). Non-preIsolated mode isolates via a plain
+// `EnterWorktree` call with no `name` — an auto-generated branch whose name this script never learns
+// — so a check against `skill-eval-${skillName}` there would silently no-op against a ref that was
+// never going to exist regardless of what actually happened upstream. Rather than ship a check that
+// looks universal but is only ever load-bearing in one of the two modes, state that plainly and skip
+// it outright when it can't mean anything.
+//
+// Uses `git ls-remote --exit-code --heads origin` (a direct server query), NOT `git fetch` +
+// `git rev-parse --verify origin/{branch}` against the local remote-tracking ref — a code-review
+// finding (this fix's own review pass) caught that the rev-parse form reads a LOCAL cache that
+// `git fetch` (no `--prune`) never removes stale entries from. A `skill-eval-{skillName}` merged and
+// deleted on GitHub in an earlier batch leaves its local `origin/skill-eval-{skillName}` tracking ref
+// behind — so the very next live-tier-only re-run of that same skill (a normal, expected case: see
+// the Select-phase note "Simulated ✅ but Live ⬜ ... should be included") would hit a false-positive
+// STOP against a branch that, on the actual remote, no longer exists. `ls-remote` asks the server
+// directly and has no such staleness class.
+function prePushExistenceCheck(skillName, preIsolated) {
+  if (!preIsolated) {
+    return `(Pre-push existence check, issue #64, skipped: this run is non-preIsolated, so this
+skill's actual branch name was auto-generated by \`EnterWorktree\` and is not known to be
+\`skill-eval-${skillName}\` — a check against that literal name would not be checking anything real
+here. This check is only load-bearing in preIsolated mode, where Stage A's own branch-reset
+guarantees the branch name.)`
+  }
+
+  return `**Before pushing \`skill-eval-${skillName}\` for the first time this run, check whether it
+already exists on origin (issue #64):** \`git ls-remote --exit-code --heads origin
+skill-eval-${skillName}\`. This is a THREE-way result, not a boolean — read the exit code precisely:
+
+- **Exit 2 (no matching ref — the expected case on every normal run):** nothing on origin yet.
+  Proceed with the push below as normal.
+- **Exit 0 (a matching ref was found):** in preIsolated mode this branch was freshly created off
+  origin/main by this same run's own branch-reset — under normal operation it has NEVER existed on
+  origin before this push, so finding it anyway means something already pushed to it (most likely a
+  duplicate or interrupted earlier Stage C run for this exact skill). **STOP, do not push.** Do not
+  guess at a reconciliation — no merge, no rebase, no force-push.
+- **Any other exit code (network/auth failure, remote unreachable — you could not actually verify
+  the branch's state):** treat this the SAME as exit 0 above. A check you could not complete is not
+  a pass — do not read "no output" as "safe to push".
+
+On either STOP branch above: set \`stoppedEarly: true\` and \`stopReason: 'remote_branch_exists'\` (or
+\`'existence_check_failed'\` for the network/auth case — name which one actually happened, do not
+default to the other), and add a \`needsHumanReview\` entry naming the unexpected pre-existing
+\`skill-eval-${skillName}\` branch on origin (or the check failure itself), this skill's own commit
+SHA (\`git rev-parse HEAD\`), and that it is sitting locally, unpushed, pending manual reconciliation.
+**Do NOT advance this skill's Simulated/Live symbols in STATUS.md below** — leave the row not-done
+so a future batch re-selects it, and record the blocked state in the row's own note column instead
+of a checkmark that implies a PR exists when none does. Still write the rest of this skill's
+bookkeeping (loop-log/batch-digest) normally — only the push/PR-open portion, and the STATUS.md
+completion symbols specifically, are blocked.`
+}
+
 // Isolation preamble shared by all three stages. `role` is 'create' for Stage A (first to touch
 // pluginRepoPath — creates the worktree in non-preIsolated mode) or 'resume' for Stage B/C (must
 // re-enter the EXACT worktree Stage A created, identified by `worktreePath`, never a fresh one).
@@ -432,9 +520,30 @@ stopped mid-edit — the operator's main checkout holds the default branch, and 
 out the same branch in two worktrees, so branch off the REMOTE ref, do NOT \`git checkout main\`):
 \`git fetch origin && git checkout -f -B skill-eval-${skillName} origin/main && git clean -fd\`
 (resolve the real default branch with \`git symbolic-ref --short refs/remotes/origin/HEAD\` if it is
-not \`main\`; \`git clean -fd\` is safe here — the eval state lives OUTSIDE this worktree). Every
-subsequent stage for this skill (review, commit) runs directly on this \`skill-eval-${skillName}\`
-branch — do NOT create a separate branch on top of it.` : `
+not \`main\`; \`git clean -fd\` is safe here — the eval state lives OUTSIDE this worktree).
+
+**Verify the branch actually advanced before touching a single file (issue #63).** This worktree is
+shared across every skill in the batch, sequentially — a prior skill's Stage A could have left it
+parked on ITS OWN branch (an interrupted run, an unexpected early return) with nothing having
+actually re-run the reset above, and staging this skill's edits on top of that stale branch silently
+mixes two skills' diffs into what looks like one clean run. Do not just trust that the command above
+exited 0. Run \`git branch --show-current\` immediately after it and confirm the output is EXACTLY
+\`skill-eval-${skillName}\` — not "starts with skill-eval-", not "close enough". If it does not match:
+**STOP.** Do not read, edit, or stage a single file in ${pluginRepoPath} — this worktree's contents
+belong to a DIFFERENT skill's branch right now, so anything you read here would be evaluating the
+wrong skill. Do NOT attempt this skill's eval/grading tiers against it — that is not "unaffected",
+it is the FIRST thing this mismatch corrupts. Return \`hasChanges: false\`, \`stoppedEarly: true\`,
+\`stopReason: 'branch_mismatch'\`, and empty \`evalScores\` (do not report a score you never actually
+measured). Add a \`needsHumanReview\` entry naming both the expected branch
+(\`skill-eval-${skillName}\`) and whatever \`git branch --show-current\` actually returned. **Do NOT
+advance this skill's Simulated/Live symbols in STATUS.md** — leave the row not-done so a future batch
+re-selects it and actually evaluates it, rather than recording a result that was never produced. Do
+NOT attempt to fix the branch mismatch yourself by re-running the checkout or force-switching
+branches — an agent guessing its way out of an unexpected branch state on a SHARED worktree risks
+silently mixing two skills' diffs, exactly the failure this check exists to prevent.
+
+Every subsequent stage for this skill (review, commit) runs directly on this
+\`skill-eval-${skillName}\` branch — do NOT create a separate branch on top of it.` : `
 
 This skill's changes are already staged here by the prior pipeline stage, on branch
 \`skill-eval-${skillName}\` — do NOT re-branch, re-fetch, or reset anything; just inspect/build on
@@ -1044,8 +1153,11 @@ ${findingsIntro}
    second-round fix that was never itself re-reviewed. This "note and move on" allowance applies
    ONLY to items surfaced by THIS re-review pass, never to anything Stage B already found — nothing
    from Stage B's review gets quietly downgraded to "chose not to chase".
-3. \`git add -A\` again (your fixes may have touched files or added new ones), then \`git commit\`,
-   push, and open the PR. Use the PR-creation mechanism the plugin playbook's repo facts specify
+3. \`git add -A\` again (your fixes may have touched files or added new ones), then \`git commit\`.
+
+${prePushExistenceCheck(skillName, preIsolated)}
+
+   Then push, and open the PR. Use the PR-creation mechanism the plugin playbook's repo facts specify
    (gh api workaround if a PreToolUse hook blocks \`gh pr create\`, otherwise \`gh pr create\` directly
    — never guess which applies, it's documented per plugin). **Commit message and PR title format is
    fixed, not your call:** \`type(${skillName}): subject\` — type is \`fix\` for the default
@@ -1078,9 +1190,13 @@ branch reset (\`git checkout -f -B skill-eval-{next} origin/main && git clean -f
 wipe this skill's uncommitted work otherwise — leaving nothing for a human to even find.
 
 1. Do NOT run the review-findings-apply steps above — there are no findings, because no review ran.
-2. \`git add -A\` (in case anything changed since Stage A staged), then \`git commit\`, push, and open
-   the PR exactly as in the normal flow — same fixed \`type(${skillName}): subject\` commit/PR-title
-   format as above, see ${evalSchemaPath} §7. Same as the normal flow, doing this directly instead
+2. \`git add -A\` (in case anything changed since Stage A staged), then \`git commit\`.
+
+${prePushExistenceCheck(skillName, preIsolated)}
+
+   Then push, and open the PR exactly as in the normal flow — same fixed
+   \`type(${skillName}): subject\` commit/PR-title format as above, see ${evalSchemaPath} §7. Same as
+   the normal flow, doing this directly instead
    of via the interactive \`git-pr-workflows:git-workflow\` skill is expected and is NOT itself a
    \`needsHumanReview\` reason — see §7's "PR-creation bypasses the interactive git-workflow skill"
    note. That exception is unrelated to, and does not reduce, step 3's mandatory entry below.
@@ -1256,10 +1372,49 @@ to match. Do this even if it means this batch's actual work now includes a newly
 weren't expecting.
 
 A skill counts as fully done only if Simulated is ✅ AND Live is either ✅ or a verified 🟦 N/A (per
-${evalSchemaPath}'s convention — never treat plain ⬜ as done). Return the first ${count} skills, in the
-table's current row order (this is the plugin's own dependency/pipeline order, not alphabetical —
-do not re-sort it), that are not yet fully done. A skill with Simulated ✅ but Live ⬜ counts as
-not-done and should be included (to finish its live tier), not skipped in favor of a fresh skill.
+${evalSchemaPath}'s convention — never treat plain ⬜ as done). Walk the table in its current row order
+(this is the plugin's own dependency/pipeline order, not alphabetical — do not re-sort it) and build a
+list of not-yet-fully-done skills until you have ${count} of them — a skill with Simulated ✅ but Live
+⬜ counts as not-done and belongs on this list (to finish its live tier), not skipped in favor of a
+fresh skill.
+
+**Before finalizing that list, live-verify each one against GitHub — do not trust STATUS.md's ✅/⬜
+symbols alone (issue #65).** STATUS.md's symbols are written by a PRIOR run's own Stage C bookkeeping
+and can go stale — a skill can already be fully done, with its own open PR from an earlier batch,
+while STATUS.md still shows a transient in-progress symbol from the run that produced it (confirmed,
+recurring incident: a skill selected a second time into a later same-day batch despite already having
+an open, mergeable PR from an earlier batch that same day — Stage A/C caught it and stopped rather
+than force-pushing over the divergent branch, but a live check here would have skipped it before any
+agent budget was spent on it at all). For each skill on the list above, in row order, run \`gh pr list
+--head skill-eval-{skill-name} --state open\` (cd into ${pluginRepoPath} first so \`gh\` resolves
+against the right repo — never pass \`--repo\`, same convention as every other gh call in this
+script) — **up to a hard cap of ${count * 3} checks total, whichever of that or the whole table comes
+first.** If the cap is hit before you have ${count} confirmed-eligible skills: stop checking, return
+however many you have confirmed so far (even if fewer than ${count}), and say so plainly in
+\`excludedOpenPrSkills\` (e.g. \`"stopped after ${count * 3} live-checks, table has more untested
+rows"\`) — a smaller-than-requested batch with an honest reason beats either silently truncating or
+burning an unbounded number of \`gh\` calls on one plugin's selection.
+
+If a checked skill already has an open PR: **drop it from the list, regardless of what STATUS.md's
+symbols say** — its work is already in flight, and re-selecting it risks a second Stage A run
+branching over (and colliding with) that same, still-open PR's branch. **Continue walking the table
+past your original cutoff to backfill each drop** (subject to the cap above) — the goal is still
+${count} skills when you're done, not ${count} minus however many got excluded; do not let this check
+silently shrink the batch below what was asked for while eligible rows remain further down the table
+and the cap hasn't been hit. Record every dropped skill as \`"skillName: excluded, open PR at <PR
+URL>"\` in the \`excludedOpenPrSkills\` array (empty array if nothing was excluded or failed) — this is
+the ONLY place that record exists, so a skipped entry here is a skipped entry nobody can see later.
+
+**If \`gh\` itself fails for a given check** (not installed, not authenticated, rate-limited, no
+GitHub remote — the last of these is expected and NOT an error for a flat skill-collection repo with
+no PR workflow at all): do not fail the whole selection over it, same convention as
+\`skills/status/SKILL.md\`'s own live-PR check. Keep that one skill on the list (trust STATUS.md's
+symbol for it, same as before this fix existed) — this is NOT an exclusion, so do not count it as one
+— but still add a one-line note to \`excludedOpenPrSkills\` in the DIFFERENT format \`"skillName:
+live-check failed (gh not authenticated), trusted STATUS.md instead, still included"\`, distinguishable
+from an actual exclusion by the word "included", so a human (or the batch notes this feeds into) can
+tell "verification attempted and failed" apart from "verification succeeded and excluded" — the two
+have opposite implications for what's actually in this batch.
 
 ${batchDigestHeaderInstruction(skillEvalsDir, plugin, count)}
 
@@ -1287,6 +1442,15 @@ if (!selection.pluginRepoPathExists) {
     batchSummary: `Aborted: "${pluginRepoPath}" could not be confirmed to exist as a directory for plugin "${plugin}". Not proceeding on an unverified path — check the argument and retry.`,
     totalPRs: [], totalIssues: [], totalNeedsHumanReview: [],
   }
+}
+
+// issue #65: surface the Select phase's own excludedOpenPrSkills rows — this array mixes two
+// distinct entry shapes (an actual exclusion vs. a failed-but-still-included live-check, see the
+// schema field's own description), so this note deliberately does NOT claim a count of "excluded"
+// skills — that would misreport a batch where every entry here was a check failure, not an
+// exclusion, as having dropped work that's actually still running.
+if (Array.isArray(selection.excludedOpenPrSkills) && selection.excludedOpenPrSkills.length) {
+  batchNotes.push(`Select phase's live-PR check produced ${selection.excludedOpenPrSkills.length} note(s) (each is either an actual exclusion for an already-open PR, or a failed check where the skill was kept — see the "excluded"/"included" wording in each entry): ${selection.excludedOpenPrSkills.join('; ')}`)
 }
 
 let skillsToProcess = Array.isArray(selection.skills) ? selection.skills : []
@@ -1376,6 +1540,10 @@ Select phase above (Simulated ✅ AND Live ✅ or verified 🟦 N/A, per ${evalS
 rather than blindly taking the first ${count} rows, in case the onboarding playbook pre-marked any
 row N/A. Also re-verify pluginRepoPathExists the same way as before.
 
+(Deliberately no issue #65 live-PR-check here, unlike the Select phase above: onboarding just
+completed for this plugin, so by definition no skill-eval-* PR can exist yet for anything in this
+list. Leave \`excludedOpenPrSkills\` empty.)
+
 ${batchDigestHeaderInstruction(skillEvalsDir, plugin, count)}
 
 This is the SAME header write the Select phase above would have done if STATUS.md had already
@@ -1408,9 +1576,15 @@ onboarding itself finished).`,
   }
 }
 
-// Dedupe by name in case the Select agent returned a skill twice (code review L5).
+// Dedupe by name in case the Select agent returned a skill twice (code review L5), and reject any
+// name that doesn't pass isValidSkillSlug before it can reach a shell command string (defense in
+// depth, see that function's own comment for why skill names get this scrutiny too).
 const seenNames = new Set()
 skillsToProcess = skillsToProcess.filter((s) => {
+  if (!isValidSkillSlug(s && s.name)) {
+    batchNotes.push(`Select phase returned an invalid skill name (${JSON.stringify(s && s.name)}) — dropped before it could reach any git/gh command, investigate the Select agent output.`)
+    return false
+  }
   if (seenNames.has(s.name)) return false
   seenNames.add(s.name)
   return true
