@@ -20,12 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- verify the shared preIsolated worktree actually advanced to this skill's own branch before Stage A touches any file (#63)
-- check for a pre-existing remote branch before Stage C's first push, instead of pushing blind (#64)
-- live-verify batch candidates against open PRs before selecting them, instead of trusting STATUS.md's symbols alone (#65)
+- Nothing yet
 
 ### Security
 - Nothing yet
+
+## [1.4.5] - 2026-08-01
+
+### Fixed
+- verify branch advance, guard pre-push, and live-check batch selection (#66)
 
 ## [1.4.4] - 2026-07-30
 
@@ -158,3 +161,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.4.2]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.2
 [1.4.3]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.3
 [1.4.4]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.4
+[1.4.5]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.5
