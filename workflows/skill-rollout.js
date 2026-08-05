@@ -124,7 +124,7 @@ const EDIT_RESULT_SCHEMA = {
       type: 'object',
       properties: {
         simulatedScore: { type: 'string' },
-        liveScore: { type: 'string', description: '"N/A" if no MCP surface, else pass/total, empty string if not attempted' },
+        liveScore: { type: 'string', description: 'The exact string to write into STATUS.md\'s Live cell: "N/A" if no MCP surface, pass/total (e.g. "12/12") if fully live-tested, empty string if not attempted, a bare "🟥 BLOCKED" for a non-terminal pending-sandbox-convention block, or "🟥 BLOCKED (read-exposure, permanent)" (optionally with trailing case-count detail, e.g. "🟥 BLOCKED (read-exposure, permanent) — 4/6 executed, 2 permanently blocked") for a source-verified terminal read-exposure block (issue #67). This field, not a direct STATUS.md write, is how Stage A hands its Live-column conclusion to Stage C — Stage A itself must never write STATUS.md\'s closing state (see the stage boundary below).' },
       },
     },
     needsHumanReview: { type: 'array', items: { type: 'string' } },
@@ -176,7 +176,7 @@ const SKILL_RESULT_SCHEMA = {
   properties: {
     skill: { type: 'string' },
     simulatedScore: { type: 'string' },
-    liveScore: { type: 'string', description: '"N/A" if no MCP surface, else pass/total, empty string if not attempted' },
+    liveScore: { type: 'string', description: 'The exact string Stage C wrote into STATUS.md\'s Live cell: "N/A" if no MCP surface, pass/total (e.g. "12/12") if fully live-tested, empty string if not attempted, a bare "🟥 BLOCKED" for a non-terminal pending-sandbox-convention block, or "🟥 BLOCKED (read-exposure, permanent)" (optionally with trailing case-count detail) for a source-verified terminal read-exposure block (issue #67) — echo Stage A\'s evalScores.liveScore verbatim when it carries one of these, never paraphrase a BLOCKED annotation into a bare score.' },
     prUrls: { type: 'array', items: { type: 'string' } },
     issuesFiled: { type: 'array', items: { type: 'string' } },
     needsHumanReview: { type: 'array', items: { type: 'string' } },
@@ -711,18 +711,60 @@ simulated-only and do NOT treat this as this skill's own N/A case. Set \`mcpSurf
 your structured result and add a \`needsHumanReview\` entry stating the plugin's MCP server was not
 connected in this session (name the server) — but do NOT mark the Live column 🟥 BLOCKED or 🟦 N/A for
 this: per ${evalSchemaPath}, both of those mean something more permanent (an unimplemented sandbox
-convention, or a genuinely MCP-free skill) than a transient session-connectivity gap. Leave it ⬜ (not
+convention, a source-verified read-exposure block, or a genuinely MCP-free skill) than a transient
+session-connectivity gap. Leave it ⬜ (not
 attempted yet — which is accurate here) and let \`mcpSurfaceAbsent\` plus the \`needsHumanReview\` note
 carry the signal instead. The launcher-side pre-flight in \`skills/run/SKILL.md\` Step 2 is supposed
 to catch this before any skill work starts, so if you are hitting it here, that pre-flight was skipped
 or the environment changed mid-batch; either way this is a batch-level environment problem, not a
 per-skill finding.
 
-**Read-only bypass, check this FIRST, before the hard gate below (issue #24):** grep every domain
-MCP tool call this skill's own SKILL.md actually makes — not a plugin-wide sample, this specific
-skill's own surface, real invocations only (a tool NAMED in cautionary prose, e.g. "unlike
-\`update_note\`, this skill only reads", is not itself a call). Two independent conditions must both
-hold, checked in this order:
+**Read-exposure check, run this FIRST for every skill's own MCP surface, regardless of whether the
+skill also has write-capable calls elsewhere (issue #67):** grep every domain MCP tool call this
+skill's own SKILL.md actually makes — not a plugin-wide sample, this specific skill's own surface,
+real invocations only (a tool NAMED in cautionary prose, e.g. "unlike \`update_note\`, this skill only
+reads", is not itself a call). For every call confirmed read-only by real behavior (reuse the exact
+classification rigor from the read-only bypass's own condition 1 just below — confirm from the tool's
+actual documented behavior, never infer from a name/prefix alone), separately check whether BOTH of
+these hold:
+- the data it actually returns is sensitive (personal, legal, medical, or business/customer data —
+  not just "this plugin's own docs" or public content), AND
+- the call is unscoped/global: no entity-scoping parameter ties the read to a \`zz-sandbox-\`-prefixed
+  or otherwise synthetic entity (e.g. \`tool_list_persons()\` with no \`case_id\` argument,
+  \`tool_list_shared_contacts()\` with no scope argument) — so even invoking it from inside a sandbox
+  context still returns real, non-sandbox data mixed in.
+
+A call meeting both is a \`sensitive-unscopable-read\`. Read-only clearance existing for
+storyforge/mm-skills-style lookups (public wiki pages, the plugin's own project registry) does not
+generalize to one of these. This finding is independent of write-capability — a skill can have some
+calls be write-capable-but-sandboxable (handled normally below) while a SEPARATE call is a
+\`sensitive-unscopable-read\`; one write-capable call elsewhere does NOT excuse or hide this, and
+having zero write-capable calls elsewhere does NOT make this any less blocking.
+
+If this skill has at least one confirmed \`sensitive-unscopable-read\`: do not attempt any live case
+that depends on it — do not risk a real exposure just to "confirm" what source review already
+established. Every OTHER live case that does NOT depend on one still runs normally, through whichever
+of the two paths below applies (read-only bypass or the hard gate/sandbox-exists path) — a
+\`sensitive-unscopable-read\` disqualifies only the specific cases that need it, not automatically the
+skill's entire live tier. Once every runnable case is done (or immediately, if every case depends on
+one, e.g. a skill whose entire purpose is a cross-entity sensitive listing), set your structured
+result's \`evalScores.liveScore\` to \`🟥 BLOCKED (read-exposure, permanent)\` (optionally with trailing
+case-count detail, e.g. "🟥 BLOCKED (read-exposure, permanent) — 4/6 executed, 2 permanently blocked")
+— NOT a bare 🟥 BLOCKED, NOT a plain pass/total, even if every case that DID run passed. You do NOT
+write this into STATUS.md yourself (the stage boundary below forbids it) — \`liveScore\` is how Stage C
+learns to write it there. Per ${evalSchemaPath} this is the terminal flavor, distinct from the hard
+gate's non-terminal "pending sandbox convention" flavor below — no sandbox design will ever unblock a
+read of real sensitive data by design, so a future batch re-checking it would be pure no-op busywork.
+This exact annotation is what the Select phase's done-check further down recognizes as fully done
+despite the cell never becoming ✅. Note the split explicitly (e.g. "N/M executed cases passed, K
+permanently blocked (read-exposure)") in loop-log.md's per-iteration entry and in \`liveScore\` itself
+— a bare permanent-annotation cell with no case-level detail loses exactly the information a future
+reader needs to trust the classification wasn't guessed.
+
+**Read-only bypass, check this FIRST among the mutation-risk checks below — after the read-exposure
+check above, before the hard gate further down (issue #24):** applies to whichever
+calls remain after the read-exposure check above already excluded any \`sensitive-unscopable-read\`
+dependent cases. Two independent conditions must both hold, checked in this order:
 
 1. **Classify by what each tool DOES, not by its name.** For every call found, confirm from the
    tool's actual documented behavior (its description, or the MCP server's own source if the
@@ -743,13 +785,9 @@ hold, checked in this order:
    hard gate below as normal.
 
 **Even if both conditions above hold, this bypass addresses MUTATION risk only — it is not a
-read-anything clearance.** If the real data these calls would READ is itself sensitive (personal,
-legal, medical, or business/customer data — not just "this plugin's own docs" or public content),
-that is still a stop-and-flag under the "would touch real non-sandbox data" condition later in this
-prompt, exactly as if this were a write. Read-only clearance existing for storyforge/mm-skills-style
-lookups (public wiki pages, the plugin's own project registry) does not generalize to a skill whose
-read surface touches a real person's case file, medical record, or financial data — treat that case
-as blocked regardless of mutation risk, add the \`needsHumanReview\` entry, and do not proceed.
+read-anything clearance.** The read-exposure check above already covers read-anything-sensitive risk
+independently of this bypass, so clearing both conditions here never means "safe to read anything
+real" — only "no case in this skill's surface can mutate state outside a sandbox".
 
 If — and only if — both conditions above hold AND the data being read isn't independently sensitive:
 this skill is 🟩 READ-ONLY-cleared regardless of the plugin-level sandbox gate below. Skip the hard
@@ -774,9 +812,16 @@ convention's \`create-testdata\`/\`reset-testdata\`/\`delete-testdata\` skills a
 enforce, not because of its subject matter. Add an entry to \`needsHumanReview\` naming this skill and
 stating that its live tier is blocked pending the three-skill convention being implemented (or fixed)
 for this plugin — point at the per-plugin GitHub issue if the playbook names one, this is a buildable
-engineering task, never an undefined "conversation" — mark the Live column 🟥 BLOCKED (not ⬜ — leaving
-it ⬜ is indistinguishable from "not attempted yet"; not N/A either — N/A means "verified not
-applicable", this is "applicable but blocked", a third, distinct state), and move on. This is exactly
+engineering task, never an undefined "conversation" — mark the Live column 🟥 BLOCKED, bare with no
+other annotation (set \`evalScores.liveScore\` to exactly \`🟥 BLOCKED\`; you do NOT write STATUS.md
+yourself, see the stage boundary below — this is not ⬜ — leaving it ⬜ is indistinguishable from "not
+attempted yet"; not N/A either — N/A means "verified not applicable", this is "applicable but
+blocked", a third, distinct state; and NOT the \`(read-exposure, permanent)\` annotation from the
+read-exposure check above — this gate only knows the convention is missing, it has made no finding
+about read-exposure). This bare form is non-terminal (issue #67, per ${evalSchemaPath}'s "pending
+sandbox convention" flavor): the Select
+phase keeps re-selecting a skill in this state on every future batch, and rightly so, since the
+convention landing later would genuinely unblock it. This is exactly
 as hard a stop as the "would touch real non-sandbox data" condition later in this prompt — because
 it's the same risk, just caught earlier, before any sandbox even exists to accidentally misuse.
 
@@ -817,10 +862,11 @@ mechanics in \`${referenceDir || '(referenceDir not provided — see the warning
    the whole point is that skill #2 never re-derives what skill #1 already found. Commit it under
    the same scoped-add/scoped-commit git-safety rule as every other \`${skillEvalsDir}\` file.
 
-If neither block above stopped you — either this skill cleared the read-only bypass, or a
+If none of the checks above stopped this skill entirely — either it cleared the read-only bypass, or a
 verified-safe sandbox strategy already exists for this plugin (storyforge being the only confirmed
-case today, purely because that design work happened here first) — run Prompt 3 against the real
-system, with the exact evidentiary rigor depending on which path got you here:
+case today, purely because that design work happened here first) — run Prompt 3 against every live
+case the read-exposure check above did NOT already exclude, with the exact evidentiary rigor depending
+on which path got you here:
 - **Read-only-cleared skill:** no sandbox needed — there is nothing to reset before or after, since
   a read cannot mutate shared state. Still require a real \`tool_use\` block as evidence for every
   claimed call (never take the executor's prose claim alone), and still run cases strictly in
@@ -1245,7 +1291,12 @@ Append the closing entry to ${skillEvalsDir}/${pluginName}/${skillName}/loop-log
 entries were already written by Stage A during Prompt 2 — this is the closing entry, and should
 reflect the actually-reviewed, actually-committed final state, including the PR URL if one was
 opened), write the final loop-state.json, and update this skill's row in
-${skillEvalsDir}/${pluginName}/STATUS.md.
+${skillEvalsDir}/${pluginName}/STATUS.md. **Write the Live cell from \`stageAResultsBlock\`'s
+\`evalScores.liveScore\` above verbatim if it carries a 🟥 BLOCKED annotation (bare, or
+\`(read-exposure, permanent)\`, issue #67) — do NOT paraphrase it into a plain pass/total score, and
+do not drop the annotation just because some of that skill's cases did pass; a partial pass/fail
+count belongs in the Notes column alongside it, per ${evalSchemaPath}'s convention, never in place of
+the annotation.**
 
 ${deploySyncGuardrail(pluginRepoPath)}
 
@@ -1371,8 +1422,16 @@ with a one-line note on when/why it appeared, and correct STATUS.md's total-skil
 to match. Do this even if it means this batch's actual work now includes a newly-added skill you
 weren't expecting.
 
-A skill counts as fully done only if Simulated is ✅ AND Live is either ✅ or a verified 🟦 N/A (per
-${evalSchemaPath}'s convention — never treat plain ⬜ as done). Walk the table in its current row order
+A skill counts as fully done if Simulated is ✅ AND Live is either ✅, a verified 🟦 N/A, or a cell
+containing the annotation \`🟥 BLOCKED (read-exposure, permanent)\` (per ${evalSchemaPath}'s
+convention, issue #67 — the cell may carry extra trailing detail after it, e.g. a case-count split
+like "4/6 executed, 2 permanently blocked", that's fine, match on the annotation being present, not
+on cell equality). The last of these never becomes ✅, but it is a source-verified, terminal block
+that no future batch can ever resolve, so it counts as done for scheduling purposes the same as the
+other two. A bare 🟥
+BLOCKED, or one annotated any other way (the non-terminal "pending sandbox convention" flavor), is
+NOT done — fail open toward re-checking it, since a later batch may unblock it once the convention
+lands. Never treat plain ⬜ as done either. Walk the table in its current row order
 (this is the plugin's own dependency/pipeline order, not alphabetical — do not re-sort it) and build a
 list of not-yet-fully-done skills until you have ${count} of them — a skill with Simulated ✅ but Live
 ⬜ counts as not-done and belongs on this list (to finish its live tier), not skipped in favor of a
@@ -1535,10 +1594,11 @@ different scope) so it's still consistently distinguishable from a per-skill PR 
   const reselect = await agent(
     `Onboarding for "${plugin}" (repo: ${pluginRepoPath}) just completed. Read the newly-created
 ${skillEvalsDir}/${plugin}/STATUS.md and return the first ${count} skills in table order. Every row
-should be ⬜/⬜ on a fresh onboarding, but don't assume — apply the same "fully done" rule as the
-Select phase above (Simulated ✅ AND Live ✅ or verified 🟦 N/A, per ${evalSchemaPath}'s convention)
-rather than blindly taking the first ${count} rows, in case the onboarding playbook pre-marked any
-row N/A. Also re-verify pluginRepoPathExists the same way as before.
+should be ⬜/⬜ on a fresh onboarding, but don't assume — apply the exact same "fully done" rule as the
+Select phase above (Simulated ✅ AND Live ✅, verified 🟦 N/A, or a cell containing the annotation
+\`🟥 BLOCKED (read-exposure, permanent)\`, per ${evalSchemaPath}'s convention, issue #67) rather than
+blindly taking the first ${count} rows, in case the onboarding playbook pre-marked any row N/A or a skill was
+pre-seeded with a permanent block. Also re-verify pluginRepoPathExists the same way as before.
 
 (Deliberately no issue #65 live-PR-check here, unlike the Select phase above: onboarding just
 completed for this plugin, so by definition no skill-eval-* PR can exist yet for anything in this
@@ -1801,7 +1861,16 @@ for (const skill of skillsToProcess) {
     ...(Array.isArray(result.issuesFiled) ? result.issuesFiled : []),
   ]
   if (!result.simulatedScore && editResult.evalScores) result.simulatedScore = editResult.evalScores.simulatedScore
-  if (!result.liveScore && editResult.evalScores) result.liveScore = editResult.evalScores.liveScore
+  // issue #67: a 🟥 BLOCKED annotation from Stage A always wins over Stage C's own echo, even when
+  // Stage C returned a non-empty liveScore — Stage C is instructed to copy it verbatim, but if it
+  // paraphrased a partial pass rate into a plain score instead, silently accepting that would lose
+  // the terminal-for-scheduling signal the Select phase's done-check depends on.
+  const editLiveScore = (editResult.evalScores && editResult.evalScores.liveScore) || ''
+  if (editLiveScore.indexOf('🟥 BLOCKED') !== -1) {
+    result.liveScore = editLiveScore
+  } else if (!result.liveScore && editResult.evalScores) {
+    result.liveScore = editResult.evalScores.liveScore
+  }
 
   results.push(result)
   log(`${skill.name} (${positionLabel}): done — ${result.summary}`)
