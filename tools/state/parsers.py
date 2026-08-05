@@ -19,6 +19,11 @@ from tools.shared.config import resolve_config
 _DONE = "✅"
 _NA = "🟦"
 _NOT_STARTED = "⬜"
+# issue #67: a source-verified, permanent read-exposure block never becomes ✅ (no
+# sandbox convention can fix a real sensitive-data read), but it IS a terminal state
+# for scheduling purposes — same as ✅/verified N/A, distinct from a bare/pending-
+# sandbox-convention 🟥 BLOCKED, which stays non-terminal.
+_PERMANENT_BLOCKED = "🟥 BLOCKED (read-exposure, permanent)"
 
 # plugin/skill are interpolated into a filesystem path — enforce the slug shape
 # the tool docstrings promise, so a value like "../../etc" can't read outside
@@ -41,9 +46,11 @@ def _plugin_dir(plugin: str) -> Path:
 
 
 def _is_fully_done(simulated: str, live: str) -> bool:
-    """A skill is fully done when simulated is ✅ AND live is ✅ or a verified N/A."""
+    """A skill is fully done when simulated is ✅ AND live is ✅, a verified N/A, or
+    an explicit permanent read-exposure block (issue #67) — a bare/otherwise-annotated
+    🟥 BLOCKED is NOT done, it stays non-terminal pending the sandbox convention."""
     sim_done = _DONE in simulated
-    live_done = _DONE in live or _NA in live
+    live_done = _DONE in live or _NA in live or _PERMANENT_BLOCKED in live
     return sim_done and live_done
 
 

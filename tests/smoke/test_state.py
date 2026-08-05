@@ -24,8 +24,10 @@ Some prose that should be ignored by the parser.
 | beta | ✅ 30/30 (1.0) | ✅ 12/12 | fully done, live passed |
 | gamma | ✅ 20/20 | ⬜ | simulated done, live open |
 | delta | ⬜ | 🟦 N/A | not started |
+| epsilon | ✅ 23/23 | 🟥 BLOCKED (read-exposure, permanent) | terminal (#67) |
+| zeta | ✅ 44/44 | 🟥 BLOCKED | bare, non-terminal (#67) |
 
-**4 skills total.**
+**6 skills total.**
 """
 
 
@@ -55,13 +57,15 @@ def test_list_evals_parses_table_and_derives_fully_done(tmp_path, monkeypatch):
     res = parsers.list_evals("demo")
     assert res["exists"] is True
     by_name = {s["name"]: s for s in res["skills"]}
-    assert set(by_name) == {"alpha", "beta", "gamma", "delta"}
-    # fullyDone: ✅ simulated AND (✅ or N/A live)
+    assert set(by_name) == {"alpha", "beta", "gamma", "delta", "epsilon", "zeta"}
+    # fullyDone: ✅ simulated AND (✅, N/A, or a permanent read-exposure block live)
     assert by_name["alpha"]["fullyDone"] is True
     assert by_name["beta"]["fullyDone"] is True
     assert by_name["gamma"]["fullyDone"] is False  # live still ⬜
     assert by_name["delta"]["fullyDone"] is False  # simulated ⬜
-    assert res["counts"] == {"total": 4, "fullyDone": 2, "notDone": 2}
+    assert by_name["epsilon"]["fullyDone"] is True  # #67: terminal permanent block
+    assert by_name["zeta"]["fullyDone"] is False  # bare BLOCKED stays non-terminal
+    assert res["counts"] == {"total": 6, "fullyDone": 3, "notDone": 3}
 
 
 def test_list_evals_missing_plugin_returns_not_onboarded(tmp_path, monkeypatch):
