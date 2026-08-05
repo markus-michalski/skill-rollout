@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Nothing yet
 
+## [1.4.6] - 2026-08-05
+
+### Fixed
+- treat annotated permanent BLOCKED as done in Select phase (#68)
+
 ## [1.4.5] - 2026-08-01
 
 ### Fixed
@@ -162,3 +167,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.4.3]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.3
 [1.4.4]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.4
 [1.4.5]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.5
+[1.4.6]: https://github.com/markus-michalski/skill-rollout/releases/tag/v1.4.6
